@@ -14,10 +14,8 @@ CSS_PATH = Path(__file__).with_name("style.css")
 
 
 def load_css() -> None:
-    provider = Gtk.CssProvider()
-    provider.load_from_path(str(CSS_PATH))
-    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
-                                              Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+    from hyprspot.ui import theme
+    theme.load(CSS_PATH)
 
 
 # atalhos dos botões do player, mostrados na dica (com o mouse sobre o compacto, ou no expandido)

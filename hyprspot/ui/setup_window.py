@@ -451,10 +451,8 @@ class SetupApp(Gtk.Application):
 
     def do_activate(self) -> None:
         if self.win is None:
-            provider = Gtk.CssProvider()
-            provider.load_from_path(str(CSS_PATH))
-            Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
-                                                      Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+            from hyprspot.ui import theme
+            theme.load(CSS_PATH)
             self.win = SetupWindow(self, self.side_effects)
         self.win.present()
 

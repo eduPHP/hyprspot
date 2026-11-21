@@ -17,6 +17,7 @@ from hyprspot.ui.compact import context_name  # noqa: E402
 from hyprspot.ui.cover import ArtLoader, Cover  # noqa: E402
 from hyprspot.ui.lists import make_list, playlist_row, replace_rows, track_row  # noqa: E402
 from hyprspot.ui.playlist_page import PlaylistPage  # noqa: E402
+from hyprspot.ui import theme  # noqa: E402
 from hyprspot.model import Playlist  # noqa: E402
 
 OnCommand = Callable[[str, dict], None]
@@ -417,9 +418,9 @@ class ExpandedView(Gtk.Box):
         self.sr_tr_label.set_visible(bool(pls) and bool(results))
         replace_rows(self.sr_list, [track_row(t, self.art) for t in results])
         if not q:
-            msg = "Digite para buscar. <span font_family='JetBrains Mono' foreground='#c0caf5'>Enter</span> toca o primeiro resultado."
+            msg = f"Digite para buscar. <span font_family='JetBrains Mono' foreground='{theme.hex('hs_fg')}'>Enter</span> toca o primeiro resultado."
         elif self.state.error:
-            msg = f"<span foreground='#f7768e'>{GLib.markup_escape_text(self.state.error)}</span>"
+            msg = f"<span foreground='{theme.hex('hs_red')}'>{GLib.markup_escape_text(self.state.error)}</span>"
         elif not results and not pls:
             msg = f"Nada encontrado para “{GLib.markup_escape_text(q)}”."
         else:

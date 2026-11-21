@@ -207,10 +207,8 @@ def setup_shots(out: Path, done) -> None:
 
     from hyprspot.ui import setup_window as sw
 
-    provider = Gtk.CssProvider()
-    provider.load_from_path(str(sw.CSS_PATH))
-    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
-                                              Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+    from hyprspot.ui import theme
+    theme.load(sw.CSS_PATH)
     cid = "3f9a2c7e51d84b06a8e2f41c97d05b6e"
     fake = Fake()
     win = as_layer(sw.SetupWindow(None, fake))
