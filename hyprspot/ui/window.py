@@ -1,6 +1,9 @@
 """Janela layer-shell (OVERLAY) que alterna entre compacto e expandido."""
 from __future__ import annotations
 
+import os
+import sys
+import time
 from typing import Callable
 
 import gi
@@ -13,8 +16,18 @@ from gi.repository import Gtk4LayerShell as LS  # noqa: E402
 from hyprspot.config import Config  # noqa: E402
 from hyprspot.focus import Output, hypr_cursor, hypr_outputs, output_at  # noqa: E402
 
+_DEBUG = bool(os.environ.get("HYPRSPOT_DEBUG"))
+
+
+def _log(*args) -> None:
+    if _DEBUG:
+        print(f"[drag {time.monotonic():.3f}]", *args, file=sys.stderr, flush=True)
+
+
 EDGES = {"top": LS.Edge.TOP, "bottom": LS.Edge.BOTTOM, "left": LS.Edge.LEFT, "right": LS.Edge.RIGHT}
 DRAG_THRESHOLD = 8  # px; abaixo disso o botão esquerdo continua sendo um clique
+FOLLOW_TICK_MS = 16
+FOLLOW_IDLE_S = 0.4  # seguindo: o Hyprland não entrega o soltar do botão; cursor parado este tempo = soltou
 PUSH_OFFSCREEN_PX = 48  # empurrar além da borda mais que isto conta como "quero tirar da tela"
 
 
@@ -108,7 +121,9 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         self._drag_outs: list[Output] = []
         self._drag_out: Output | None = None
         self._grab_offset = (0.0, 0.0)
-        self._drag_home: str | None = None  # monitor onde o arrasto começou (a layer fica nele até soltar)
+        self._drag_home: str | None = None  # monitor onde o arrasto começou
+        self._follow_id = 0  # seguindo o cursor depois que o Hyprland encerrou o arrasto (ver _drag_end)
+        self._follow_last: tuple[tuple[float, float] | None, float] = (None, 0.0)
         self._drag_overshoot = 0.0
         self._on_push_offscreen = on_push_offscreen
         self._drag_start = self.margin
@@ -134,6 +149,11 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         motion.connect("leave", lambda *_: self._hover_leave())
         motion.connect("motion", self._on_motion)
         self.add_controller(motion)
+        # Seguindo depois da troca de monitor (_drag_end), o soltar do botão chega à superfície
+        # nova sem o apertar correspondente: o GestureClick avisa com "unpaired-release".
+        release = Gtk.GestureClick(button=0)
+        release.connect("unpaired-release", self._on_unpaired_release)
+        self.add_controller(release)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._on_key)
         self.add_controller(keys)
@@ -176,6 +196,8 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             self._grabbed = True
 
     def _on_motion(self, _ctrl, x: float, y: float) -> None:
+        if self._follow_id:
+            return  # o estado dos botões no movimento não vale aqui: o GTK o zera ao trocar de superfície
         # Com o teclado exclusivo, o Hyprland continua mandando o movimento para o widget
         # mesmo com o cursor fora dele e não manda "leave". Sem isto, o widget prendia o
         # teclado e o mouse (e um "q" digitado em outra janela o fechava).
@@ -228,7 +250,9 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             if mon.get_connector() == name:
                 LS.set_monitor(self, mon)
                 self.output = name
+                _log("bound", name)
                 return True
+        _log("bind failed", name, [mons.get_item(i).get_connector() for i in range(mons.get_n_items() if mons else 0)])
         return False
 
     def _fit_margin(self, size: tuple[int, int]) -> tuple[int, int]:
@@ -237,6 +261,8 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         return clamp_margin(self.margin, size, out.area) if out else self.margin
 
     def _drag_begin(self, _g, _x: float, _y: float, left: bool) -> None:
+        if self._follow_id:
+            self._finish_follow("new drag")
         self._drag_start = self._shown_margin  # no expandido pode estar ajustada para caber
         self._dragging = False
         self._drag_cursor0 = self._cursor_pos()
@@ -248,6 +274,8 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             x, y = margin_to_pos(self._drag_start, self._size(), self._drag_out, *self._anchors())
             self._grab_offset = (self._drag_cursor0[0] - x, self._drag_cursor0[1] - y)
         self._drag_overshoot = 0.0
+        _log("begin", "left" if left else "middle", "cursor", self._drag_cursor0, "home", self._drag_home,
+             "output", repr(self.output), "outs", [(o.name, o.x, o.y, o.w, o.h) for o in self._drag_outs])
 
     def _drag_update(self, g, dx: float, dy: float, left: bool) -> None:
         if self._dragging or (left and self.mode != "compact"):
@@ -255,6 +283,7 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         if left and (dx * dx + dy * dy) < DRAG_THRESHOLD ** 2:
             return
         self._dragging = True
+        _log("dragging", "left" if left else "middle", (dx, dy))
         g.set_state(Gtk.EventSequenceState.CLAIMED)  # o botão sob o cursor não recebe o clique
         self.add_css_class("hs-dragging")
         self.set_cursor_from_name("grabbing")
@@ -298,27 +327,77 @@ class HyprspotWindow(Gtk.ApplicationWindow):
     def _drag_tick(self) -> None:
         got = self._margin_at_cursor() if self._dragging else None
         if got is not None and got[0] != self.margin:
+            _log("tick", self._cursor_pos(), "->", got[0], got[1].name if got[1] else None)
+        if got is not None and got[0] != self.margin:
             self.margin = got[0]
             self._apply_margin()
 
     def _drag_end(self, _g, dx: float, dy: float, left: bool) -> None:
+        _log("drag-end signal", "left" if left else "middle", "dragging", self._dragging, (dx, dy))
         if not self._dragging:
             return
         self._dragging = False
         if self._tick_id:
             self.remove_tick_callback(self._tick_id)
             self._tick_id = 0
-        self.remove_css_class("hs-dragging")
-        self.set_cursor(None)
         got = self._margin_at_cursor(final=True)
-        if got is not None:
-            self.margin, out = got
-            self._apply_margin()
-            if out is not None and out.name != self.output and (self.output or out.name != self._drag_home):
-                self._bind_output(out.name)  # outro monitor: a layer é recriada lá
-        else:
+        _log("end", "gtk", (dx, dy), "cursor", self._cursor_pos(), "got", got and (got[0], got[1] and got[1].name),
+             "output", repr(self.output), "home", self._drag_home)
+        if got is None:
             self.margin = drag_margin(self._drag_start, dx, dy, *self._anchors())
             self._apply_margin()
+            self._drop()
+            return
+        self._place(*got)
+        if got[1] is not None and got[1].name != self._drag_home:
+            # O Hyprland encerra o arrasto de uma layer assim que o cursor passa para outro
+            # monitor (visto no log: o "fim" chega sempre na divisa, com o botão ainda apertado).
+            # O widget muda de monitor ali e continua seguindo o cursor até o botão ser solto:
+            # o soltar sem par (_on_unpaired_release) ou, se ele não chegar, o cursor parado
+            # por FOLLOW_IDLE_S. (O estado dos botões nos eventos de movimento vem zerado.)
+            self._follow_last = (self._cursor_pos(), time.monotonic())
+            self._follow_id = GLib.timeout_add(FOLLOW_TICK_MS, self._follow_tick)
+            _log("follow start")
+            return
+        self._drop()
+
+    def _place(self, m: tuple[int, int], out: Output | None) -> None:
+        self.margin = m
+        self._apply_margin()
+        if out is not None and out.name != self.output and (self.output or out.name != self._drag_home):
+            self._bind_output(out.name)  # outro monitor: a layer é recriada lá
+
+    def _on_unpaired_release(self, _g, _x: float, _y: float, button: int, _seq) -> None:
+        _log("unpaired release", button, "following", bool(self._follow_id))
+        if self._follow_id:
+            self._finish_follow("button released")
+
+    def _follow_tick(self) -> bool:
+        c = self._cursor_pos()
+        got = self._margin_at_cursor(final=True)
+        if got is not None and (got[0] != self.margin or (got[1] and got[1].name != self.output)):
+            self._place(*got)
+        last, since = self._follow_last
+        now = time.monotonic()
+        if c != last:
+            self._follow_last = (c, now)
+        elif now - since > FOLLOW_IDLE_S:
+            self._follow_id = 0
+            self._finish_follow("cursor idle")
+            return False
+        return True
+
+    def _finish_follow(self, why: str) -> None:
+        _log("follow end", why, "cursor", self._cursor_pos(), "margin", self.margin, "output", self.output)
+        if self._follow_id:
+            GLib.source_remove(self._follow_id)
+            self._follow_id = 0
+        self._drop()
+
+    def _drop(self) -> None:
+        self.remove_css_class("hs-dragging")
+        self.remove_css_class("hs-crossing")
+        self.set_cursor(None)
         self._on_margin_changed(self.margin)
         if self._drag_overshoot > PUSH_OFFSCREEN_PX and self._on_push_offscreen:
             self._on_push_offscreen()

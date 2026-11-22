@@ -332,7 +332,39 @@ def test_drag_carries_the_widget_to_the_other_monitor(win):
     assert w.bound == ["HDMI-A-1"] and w.output == "HDMI-A-1"
     # agarrado 176 × 30 px dentro do widget: o canto vai para (1824, 570) no ultrawide
     assert w.margin == (2560 - 320 - 1824, 1054 - 64 - (570 - 26))
-    assert saved == [w.margin] and not w.has_css_class("hs-crossing")
+    # o Hyprland encerra o arrasto na divisa com o botão ainda apertado: o widget segue o cursor
+    assert saved == [] and w._follow_id
+    w.fake_cursor["pos"] = (1500.0, 600.0)
+    w._follow_tick()
+    assert w.margin == (2560 - 320 - 1324, 1054 - 64 - (570 - 26))
+    w._finish_follow("released")
+    assert saved == [w.margin] and not w._follow_id and not w.has_css_class("hs-crossing")
+    assert not w.has_css_class("hs-dragging")
+
+
+def test_follow_ends_when_the_cursor_rests(win, monkeypatch):
+    from hyprspot.ui import window as W
+    w, _ls = win
+    saved = []
+    w._on_margin_changed = saved.append
+    w.margin = (16, 16)
+    w._horiz, w._vert = "right", "bottom"
+    w.output = "eDP-1"
+    w.fake_cursor["outs"] = [LEFT, RIGHT]
+    g = FakeGesture()
+    w.fake_cursor["pos"] = (4000.0, 850.0)
+    w._drag_begin(g, 0, 0, left=True)
+    w.fake_cursor["pos"] = (2500.0, 850.0)
+    w._drag_update(g, -50, 0, left=True)
+    w._drag_end(g, 0, 0, left=True)
+    assert w._follow_id
+    now = [100.0]
+    monkeypatch.setattr(W.time, "monotonic", lambda: now[0])
+    w._follow_last = ((2500.0, 850.0), 100.0)
+    assert w._follow_tick() is True
+    now[0] = 100.0 + W.FOLLOW_IDLE_S + 0.1
+    assert w._follow_tick() is False
+    assert saved == [w.margin] and not w._follow_id
 
 
 def test_unbound_widget_is_not_rebound_when_dropped_on_its_own_monitor(win):
