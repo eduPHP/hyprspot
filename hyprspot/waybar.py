@@ -162,15 +162,13 @@ CONTROL_STYLE = """
 
 
 PROGRESS_STYLE = """
-/* custom/hyprspot: linha de progresso de 2 px embaixo do item (classe p0…p100), sobre um trilho apagado */
+/* custom/hyprspot: o fundo do item vai enchendo com a posição da faixa (classe p0…p100) */
 #custom-hyprspot {
-  background-image: linear-gradient(@accent, @accent), linear-gradient(alpha(@foreground, 0.12), alpha(@foreground, 0.12));
-  background-repeat: no-repeat; background-position: left bottom, left bottom; background-size: 0% 2px, 100% 2px;
+  background-image: linear-gradient(alpha(@accent, 0.22), alpha(@accent, 0.22));
+  background-repeat: no-repeat; background-position: left center; background-size: 0% 100%;
 }
-#custom-hyprspot.paused {
-  background-image: linear-gradient(@muted, @muted), linear-gradient(alpha(@foreground, 0.12), alpha(@foreground, 0.12));
-}
-""" + "".join(f"#custom-hyprspot.p{i} {{ background-size: {i}% 2px, 100% 2px; }}\n" for i in range(1, 101))
+#custom-hyprspot.paused { background-image: linear-gradient(alpha(@muted, 0.18), alpha(@muted, 0.18)); }
+""" + "".join(f"#custom-hyprspot.p{i} {{ background-size: {i}% 100%; }}\n" for i in range(1, 101))
 
 
 def _quoted(name: str) -> str:

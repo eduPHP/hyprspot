@@ -104,4 +104,4 @@ def test_progress_class_follows_the_position():
     assert waybar.status(pb, False, now_ms=1000)["class"] == ["playing", "p50"]
     assert waybar.status(pb, False, now_ms=1000 + 33000)["class"] == ["playing", "p60"]
     assert waybar.progress(_pb(track=None)) is None
-    assert "#custom-hyprspot.p100 { background-size: 100% 2px, 100% 2px; }" in waybar.PROGRESS_STYLE
+    assert "#custom-hyprspot.p100 { background-size: 100% 100%; }" in waybar.PROGRESS_STYLE
