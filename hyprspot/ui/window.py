@@ -30,6 +30,8 @@ EDGES = {"top": LS.Edge.TOP, "bottom": LS.Edge.BOTTOM, "left": LS.Edge.LEFT, "ri
 DRAG_THRESHOLD = 8  # px; abaixo disso o botão esquerdo continua sendo um clique
 FOLLOW_TICK_MS = 16
 FOLLOW_IDLE_S = 0.4  # seguindo: o Hyprland não entrega o soltar do botão; cursor parado este tempo = soltou
+DROPDOWN_GAP = 6  # na Waybar: distância entre a barra e o player
+DROPDOWN_EDGE = 8  # e da borda do monitor
 PUSH_OFFSCREEN_PX = 48  # empurrar além da borda mais que isto conta como "quero tirar da tela"
 
 
@@ -106,6 +108,10 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         LS.set_anchor(self, self._vert, True)
         LS.set_anchor(self, self._horiz, True)
         self.margin = tuple(config.margin)
+        self._float_anchor = config.anchor
+        self.placement = config.placement
+        self._float_output = config.monitor  # flutuando: o monitor onde o widget fica
+        self.bar_point: tuple[float, float] | None = None  # onde clicaram no item da Waybar
         self._apply_margin()
         LS.set_keyboard_mode(self, LS.KeyboardMode.NONE)
 
@@ -172,9 +178,15 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             self.expanded.set_visible(exp)
         w = self.expanded if exp else self.compact
         self.set_default_size(*w.get_size_request())
-        # o expandido é bem maior: perto da borda oposta à âncora ele sairia da tela. Mostra-o
-        # numa posição ajustada; a posição escolhida (self.margin) volta ao recolher.
-        self._apply_margin(self._fit_margin(w.get_size_request()) if exp else None)
+        if self.placement == "waybar":
+            # na Waybar não há compacto: o player aparece embaixo do item e some ao recolher
+            if exp:
+                self._place_dropdown(w.get_size_request())
+            self.set_visible(exp)
+        else:
+            # o expandido é bem maior: perto da borda oposta à âncora ele sairia da tela. Mostra-o
+            # numa posição ajustada; a posição escolhida (self.margin) volta ao recolher.
+            self._apply_margin(self._fit_margin(w.get_size_request()) if exp else None)
         self._grabbed = False
         LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE if exp else LS.KeyboardMode.NONE)
         if exp:
@@ -240,8 +252,7 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         apply()
 
     # -- ajustes --
-    def set_anchor(self, anchor: str, margin: tuple[int, int]) -> None:
-        """Encaixa no canto `anchor` (ex. "top-left") com a margem dada."""
+    def _set_edges(self, anchor: str) -> None:
         vert, horiz = anchor.split("-")
         for edge in (self._vert, self._horiz):
             LS.set_anchor(self, edge, False)
@@ -249,8 +260,52 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         self._vert, self._horiz = EDGES[vert], EDGES[horiz]
         LS.set_anchor(self, self._vert, True)
         LS.set_anchor(self, self._horiz, True)
+
+    def set_anchor(self, anchor: str, margin: tuple[int, int]) -> None:
+        """Encaixa no canto `anchor` (ex. "top-left") com a margem dada."""
+        self._float_anchor = anchor
         self.margin = tuple(margin)
-        self._reapply()
+        if self.placement == "floating":
+            self._set_edges(anchor)
+            self._reapply()
+
+    def set_placement(self, placement: str) -> None:
+        """Flutuando (compacto + expandido onde o usuário deixou) ou na Waybar (só o player, embaixo do item)."""
+        if placement == self.placement:
+            return
+        self.placement = placement
+        if placement == "floating":
+            # o player da Waybar pode ter ido para outro monitor: volta para onde o widget estava
+            if self._float_output and self._float_output != self.output:
+                self._bind_output(self._float_output)
+            self._set_edges(self._float_anchor)
+            self._reapply()
+            if self.mode == "compact":
+                self.set_visible(True)
+        else:
+            self._float_output = self.output
+            if self.mode == "compact":
+                self.set_visible(False)
+
+    def _place_dropdown(self, size: tuple[int, int]) -> None:
+        """Embaixo do item da Waybar: centrado no clique, preso no alto do monitor dele, sem sair da tela."""
+        outs = self._outputs()
+        pt = self.bar_point
+        if pt is not None:
+            out = output_at(outs, *pt)
+        else:  # atalho de teclado sem clique antes: canto superior direito do monitor focado
+            out = next((o for o in outs if o.focused), outs[0] if outs else None)
+        if out is None:
+            return
+        if out.name != self.output:
+            self._bind_output(out.name)
+        (ox, _oy), (aw, _ah) = out.origin, out.area
+        x = (pt[0] - ox - size[0] / 2) if pt is not None else aw - size[0]
+        x = int(max(DROPDOWN_EDGE, min(x, aw - size[0] - DROPDOWN_EDGE)))
+        self._set_edges("top-left")
+        LS.set_margin(self, self._horiz, x)
+        LS.set_margin(self, self._vert, DROPDOWN_GAP)
+        self._shown_margin = (x, DROPDOWN_GAP)
 
     def set_blur(self, on: bool) -> None:
         """Liga/desliga o desfoque do Hyprland. O namespace só vale num novo map: some e volta."""
@@ -268,6 +323,7 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         """Leva o widget ao monitor `name`, ainda dentro da área visível dele."""
         if not self._bind_output(name):
             return False
+        self._float_output = name
         out = next((o for o in self._outputs() if o.name == name), None)
         if out is not None:
             self.margin = clamp_margin(self.margin, self.compact.get_size_request(), out.area)
@@ -275,6 +331,8 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         return True
 
     def _reapply(self) -> None:
+        if self.placement == "waybar":
+            return
         exp = self.mode == "expanded" and self.expanded is not None
         self._apply_margin(self._fit_margin(self.expanded.get_size_request()) if exp else None)
 
@@ -318,6 +376,8 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         return clamp_margin(self.margin, size, out.area) if out else self.margin
 
     def _drag_begin(self, _g, _x: float, _y: float, left: bool) -> None:
+        if self.placement == "waybar":
+            return  # o player da Waybar fica preso embaixo do item
         if self._follow_id:
             self._finish_follow("new drag")
         self._drag_start = self._shown_margin  # no expandido pode estar ajustada para caber
@@ -335,7 +395,7 @@ class HyprspotWindow(Gtk.ApplicationWindow):
              "output", repr(self.output), "outs", [(o.name, o.x, o.y, o.w, o.h) for o in self._drag_outs])
 
     def _drag_update(self, g, dx: float, dy: float, left: bool) -> None:
-        if self._dragging or (left and self.mode != "compact"):
+        if self._dragging or (left and self.mode != "compact") or self.placement == "waybar":
             return
         if left and (dx * dx + dy * dy) < DRAG_THRESHOLD ** 2:
             return
@@ -452,6 +512,8 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         self._drop()
 
     def _drop(self) -> None:
+        if self.placement == "floating" and self.output:
+            self._float_output = self.output
         self.remove_css_class("hs-dragging")
         self.remove_css_class("hs-crossing")
         self.set_cursor(None)

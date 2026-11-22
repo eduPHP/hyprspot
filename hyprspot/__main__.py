@@ -26,6 +26,14 @@ def main(argv: list[str]) -> int:
         from hyprspot.ui.setup_window import run as run_setup
 
         return run_setup()
+    if cmd == "waybar-status":
+        from hyprspot.waybar import stream
+
+        try:
+            stream()
+        except (KeyboardInterrupt, BrokenPipeError):
+            pass
+        return 0
     if cmd == "soloist-status":
         from hyprspot.soloistctl import run_status
 

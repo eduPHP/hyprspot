@@ -17,16 +17,17 @@ from hyprspot.auth import TokenStore  # noqa: E402
 from hyprspot.cache import ArtCache, load_playlists, save_playlists  # noqa: E402
 from hyprspot.cli import ACTIONS, parse_args  # noqa: E402
 from hyprspot import onboarding as ob  # noqa: E402
+from hyprspot import waybar  # noqa: E402
 from hyprspot.config import (CACHE_DIR, CONFIG_PATH, DEFAULT_MARGIN, TOKEN_PATH, load_config,  # noqa: E402
                              save_margin, update_config)
-from hyprspot.focus import FocusWatcher, hypr_outputs  # noqa: E402
+from hyprspot.focus import FocusWatcher, hypr_cursor, hypr_outputs  # noqa: E402
 from hyprspot.soloist import SoloistClient, repeat_commands  # noqa: E402
 from hyprspot.soloistctl import days_left, installed_version  # noqa: E402
 from hyprspot.state import (AppState, QueueSync, SkipDetector, Throttle, apply_event, clock_ms,  # noqa: E402
                             optimistic, play_button_commands, playlist_click_commands, queue_is_truncated,
                             should_refresh_playlists, skip_count, skip_message)
 from hyprspot.ui.common import load_css  # noqa: E402
-from hyprspot.ui.compact import CompactView, compact_key_action  # noqa: E402
+from hyprspot.ui.compact import CompactView, compact_key_action, context_name  # noqa: E402
 from hyprspot.ui.cover import ArtLoader  # noqa: E402
 from hyprspot.ui.expanded import ExpandedView  # noqa: E402
 from hyprspot.ui.settings import SettingsView  # noqa: E402
@@ -42,6 +43,14 @@ SKIP_NOTICE_MS = 4000
 VOLUME_FLUSH_MS = 110
 SOLOIST_CHECK_S = 6 * 3600
 ROOT = Path(__file__).resolve().parent.parent
+BAR_REOPEN_GUARD_S = 0.4  # clicar no item com o player aberto: o "clicou fora" recolhe antes do clique chegar
+VOLUME_STEP = 5
+
+
+def bin_dir() -> Path:
+    """Onde a Waybar acha o hyprspot-ctl: o link do install.sh, ou o próprio repositório."""
+    local = Path.home() / ".local" / "bin"
+    return local if (local / "hyprspot-ctl").exists() else ROOT / "bin"
 
 
 def opacity_css(opacity: float) -> str:
@@ -90,6 +99,19 @@ class SettingsBridge:
             changes["margin"] = tuple(self.app.win.margin)
         update_config(CONFIG_PATH, **changes)
 
+    def set_placement(self, placement: str) -> None:
+        self.app.config.placement = placement
+        update_config(CONFIG_PATH, placement=placement)
+        if placement == "waybar":
+            done = waybar.install(bin_dir())
+            if "config" in done or "estilo" in done:
+                # a Waybar relê a config com SIGUSR2 (o estilo ela já recarrega sozinha)
+                subprocess.run(["pkill", "-SIGUSR2", "-x", "waybar"], stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+        self.app.win.set_placement(placement)
+        self.app.expanded.set_dropdown(placement == "waybar")
+        self.app.update_bar()
+
     def monitors(self) -> list[str]:
         return [o.name for o in sorted(hypr_outputs(), key=lambda o: (o.x, o.y))]
 
@@ -132,7 +154,9 @@ class HyprspotApp(Gtk.Application):
         self.skips = SkipDetector()
         self._skipped: list[str] = []
         for name in (*ACTIONS.values(), "expand", "expand-search", "expand-settings", "click-anywhere",
-                     "hide-toggle"):  # inclui "quit"
+                     "hide-toggle"):
+            if self.lookup_action(name) is not None:
+                continue  # inclui "quit"
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", lambda _a, _p, n=name: self.run_action(n))
             self.add_action(act)
@@ -182,11 +206,18 @@ class HyprspotApp(Gtk.Application):
                                   lambda m: save_margin(CONFIG_PATH, m, self.win.output), self._on_compact_key,
                                   on_push_offscreen=self._hide_hint)
         self.win.connect("notify::is-active", self._on_active_changed)
+        self.expanded.set_dropdown(self.config.placement == "waybar")
+        self._collapsed_at = 0.0
+        self.state.connect("changed", lambda _s, what: what in ("playback", "soloist", "ui", "liked") and self.update_bar())
         self.focus.connect("focus-lost", lambda *_: self._schedule_collapse())
 
         self.client.connect("event", self._on_event)
         self.client.connect("connection-changed", self._on_connection)
-        self.win.present()
+        if self.config.placement == "waybar":
+            self.win.set_visible(False)  # só aparece quando clicam no item da barra
+        else:
+            self.win.present()
+        self.update_bar()
         self.client.start()
 
         self.state.set_playlists(load_playlists(CACHE_DIR / "playlists.json"))
@@ -199,12 +230,23 @@ class HyprspotApp(Gtk.Application):
     def run_action(self, name: str) -> None:
         if self.win is None:
             return
-        if name == "toggle":
-            if not self.win.get_visible():
+        bar = self.win.placement == "waybar"
+        if name == "bar-toggle":
+            if self.state.ui_mode == "expanded":
+                self.run_action("collapse")
+            elif time.monotonic() - self._collapsed_at > BAR_REOPEN_GUARD_S:
+                self.win.bar_point = hypr_cursor()
+                self.run_action("expand")
+        elif name == "toggle":
+            if not self.win.get_visible() and not bar:
                 self.win.set_visible(True)
             self.run_action("collapse" if self.state.ui_mode == "expanded" else "expand")
+        elif name in ("volume-up", "volume-down"):
+            step = VOLUME_STEP if name == "volume-up" else -VOLUME_STEP
+            self.on_command("set_volume", {"volume": max(0, min(100, self.state.playback.volume + step))})
         elif name in ("expand", "expand-search", "expand-settings"):
-            self.win.set_visible(True)
+            if not bar:
+                self.win.set_visible(True)
             self._cancel_collapse()
             if name == "expand-search":
                 self.state.set_ui(tab="search")
@@ -223,6 +265,8 @@ class HyprspotApp(Gtk.Application):
             elif self.state.tab == "settings":
                 self.expanded.settings.sync()
         elif name == "collapse":
+            if self.state.ui_mode == "expanded":
+                self._collapsed_at = time.monotonic()
             self._cancel_collapse()
             self.focus.disarm()
             self.state.set_ui(mode="compact")
@@ -231,7 +275,8 @@ class HyprspotApp(Gtk.Application):
             self.run_action("collapse")
             self.win.set_visible(False)
         elif name == "show":
-            self.win.set_visible(True)
+            if not bar:
+                self.win.set_visible(True)
         elif name == "hide-toggle":
             self.run_action("show" if not self.win.get_visible() else "hide")
         elif name == "play-pause":
@@ -242,6 +287,7 @@ class HyprspotApp(Gtk.Application):
         elif name == "prev":
             self.on_command("skip_prev", {})
         elif name == "quit":
+            waybar.write_status(None)
             self._cancel_collapse()
             self.focus.disarm()
             self.client.stop()
@@ -478,6 +524,16 @@ class HyprspotApp(Gtk.Application):
     def _check_soloist(self) -> None:
         v = installed_version()
         self.state.set_soloist_days(days_left(v[1], date.today()) if v else None)
+
+    # ------------------------------------------------------------------ Waybar
+    def update_bar(self) -> None:
+        """O texto do item custom/hyprspot; flutuando, o item some."""
+        if self.config.placement != "waybar":
+            waybar.write_status(dict(waybar.HIDDEN))
+            return
+        st = self.state
+        waybar.write_status(waybar.status(st.playback, st.ui_mode == "expanded", context_name(st),
+                                          st.soloist_days_left))
 
     # ------------------------------------------------------------------ dicas
     def _hide_hint(self) -> None:

@@ -15,6 +15,11 @@ from hyprspot.ui.common import label, toggle_class  # noqa: E402
 
 ANCHOR_LABELS = (("top-left", "↖  Cima, esquerda"), ("top-right", "↗  Cima, direita"),
                  ("bottom-left", "↙  Baixo, esquerda"), ("bottom-right", "↘  Baixo, direita"))
+PLACEMENT_LABELS = (("floating", "Flutuando"), ("waybar", "Na Waybar"))
+PLACEMENT_HINTS = {
+    "floating": "Fica por cima das janelas, no canto que você escolher.",
+    "waybar": "Vira um item na barra; o player abre embaixo dele. Botão direito toca ou pausa, rolar muda o volume.",
+}
 OPACITY_DEBOUNCE_MS = 300
 
 
@@ -24,6 +29,7 @@ class SettingsActions(Protocol):
     def set_opacity(self, value: float) -> None: ...
     def set_blur(self, on: bool) -> None: ...
     def set_anchor(self, anchor: str) -> None: ...
+    def set_placement(self, placement: str) -> None: ...
     def set_monitor(self, name: str) -> None: ...
     def monitors(self) -> list[str]: ...
     def key_hint(self) -> str | None: ...
@@ -136,10 +142,20 @@ class SettingsView(Gtk.Box):
             self._anchor_btns[anchor] = b
             grid.attach(b, i % 2, i // 2, 1, 1)
         self.monitor_box = Gtk.Box(spacing=6, homogeneous=True)
-        return [_section("Posição"), label("Canto", "hs-set-label"), grid,
-                _caption("Leva o widget para o canto escolhido. Depois, arrastar continua valendo."),
-                label("Monitor", "hs-set-label"), self.monitor_box,
-                _caption("Automático abre no monitor em foco.")]
+        where = Gtk.Box(spacing=6, homogeneous=True)
+        self._placement_btns: dict[str, Gtk.Button] = {}
+        for key, text in PLACEMENT_LABELS:
+            b = _choice(text, lambda k=key: self._pick_placement(k))
+            self._placement_btns[key] = b
+            where.append(b)
+        self.placement_caption = _caption("")
+        # só valem flutuando: somem na Waybar
+        self._floating_only = [label("Canto", "hs-set-label"), grid,
+                               _caption("Leva o widget para o canto escolhido. Depois, arrastar continua valendo."),
+                               label("Monitor", "hs-set-label"), self.monitor_box,
+                               _caption("Automático abre no monitor em foco.")]
+        return [_section("Posição"), label("Onde fica", "hs-set-label"), where, self.placement_caption,
+                *self._floating_only]
 
     def _build_soloist(self) -> list[Gtk.Widget]:
         self.soloist_status = label("", "hs-set-caption", ellipsize=False)
@@ -200,6 +216,10 @@ class SettingsView(Gtk.Box):
         self.a.set_anchor(anchor)
         self.sync()
 
+    def _pick_placement(self, placement: str) -> None:
+        self.a.set_placement(placement)
+        self.sync()
+
     def _pick_monitor(self, name: str) -> None:
         self.a.set_monitor(name)
         self.sync()
@@ -226,6 +246,11 @@ class SettingsView(Gtk.Box):
         self.opacity_value.set_label(f"{transparency_pct(c.opacity)} %")
         self.blur.set_active(c.blur)
         self._syncing = False
+        for key, b in self._placement_btns.items():
+            toggle_class(b, "on", key == c.placement)
+        self.placement_caption.set_label(PLACEMENT_HINTS[c.placement])
+        for w in self._floating_only:
+            w.set_visible(c.placement == "floating")
         for anchor, b in self._anchor_btns.items():
             toggle_class(b, "on", anchor == c.anchor)
         names = ["", *self.a.monitors()]

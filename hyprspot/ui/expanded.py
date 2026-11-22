@@ -98,7 +98,8 @@ class ExpandedView(Gtk.Box):
             self.tab_st.set_valign(Gtk.Align.CENTER)
             bar.append(self.tab_st)
         bar.append(tabs)
-        bar.append(icon_button("pan-down-symbolic", "Recolher", self.on_collapse))
+        self.collapse_btn = icon_button("pan-down-symbolic", "Recolher", self.on_collapse)
+        bar.append(self.collapse_btn)
         return bar
 
     def _tab(self, text: str, icon: str, name: str) -> Gtk.Button:
@@ -286,6 +287,10 @@ class ExpandedView(Gtk.Box):
             if self.page_open(tab):
                 pb = self.state.playback
                 page.set_queue(self.state.queue_context, self.state.queue, pb.track, pb.context_uri)
+
+    def set_dropdown(self, on: bool) -> None:
+        """Na Waybar o player desce da barra: a seta de recolher aponta para cima."""
+        set_icon(self.collapse_btn, "pan-up-symbolic" if on else "pan-down-symbolic")
 
     # ------------------------------------------------------------------ ações
     def show_tab(self, name: str) -> None:

@@ -25,6 +25,13 @@ case "${1:-}" in
     if command -v swayosd-client >/dev/null; then exec swayosd-client --playerctl "$p"; fi
     exec playerctl "$p"
     ;;
+  waybar)  # o "exec" do item custom/hyprspot: uma linha JSON por mudança
+    exec "$HYPRSPOT" waybar-status
+    ;;
+  bar-toggle | volume-up | volume-down)
+    act "$1" && exit 0
+    exec "$HYPRSPOT" "$1"
+    ;;
   quit)
     act quit
     exit 0
@@ -40,7 +47,7 @@ case "${1:-}" in
     exec "$HYPRSPOT"
     ;;
   *)
-    echo "uso: hyprspot-ctl toggle|expand-search|expand-settings|hide-toggle|collapse|quit|open-close|media <play-pause|next|prev>" >&2
+    echo "uso: hyprspot-ctl toggle|expand-search|expand-settings|bar-toggle|volume-up|volume-down|waybar|hide-toggle|collapse|quit|open-close|media <play-pause|next|prev>" >&2
     exit 2
     ;;
 esac

@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 SIMPLE = ("toggle", "collapse", "hide", "show", "play-pause", "next", "prev", "login", "setup", "quit", "settings",
+          "waybar-status", "bar-toggle", "volume-up", "volume-down",
           "soloist-status", "soloist-update")
 
 # comandos repassados à instância em execução → nome da Gio.Action
 ACTIONS = {
     "toggle": "toggle", "collapse": "collapse", "hide": "hide", "show": "show",
     "play-pause": "play-pause", "next": "next", "prev": "prev", "quit": "quit",
+    "bar-toggle": "bar-toggle", "volume-up": "volume-up", "volume-down": "volume-down",
 }
 
 HELP = """uso: hyprspot [comando]
@@ -16,6 +18,9 @@ HELP = """uso: hyprspot [comando]
   toggle            expande/recolhe
   expand [--search] expande (na busca)
   settings          expande na aba Ajustes
+  bar-toggle        abre/fecha o player embaixo do cursor (o clique no item da Waybar)
+  volume-up | volume-down
+  waybar-status     o texto do item custom/hyprspot da Waybar (fica rodando)
   collapse          recolhe
   hide | show       esconde/mostra o widget
   quit              fecha o hyprspot (a música continua no Soloist)

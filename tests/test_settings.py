@@ -49,6 +49,10 @@ class FakeActions:
         self.cfg.blur = on
         self.calls.append(("blur", on))
 
+    def set_placement(self, pl):
+        self.cfg.placement = pl
+        self.calls.append(("placement", pl))
+
     def set_anchor(self, a):
         self.cfg.anchor = a
         self.calls.append(("anchor", a))
@@ -156,3 +160,15 @@ def test_saving_the_key_reports_errors_and_clears_on_success(expanded):
     s.key_entry.set_text("spak_nova")
     s._save_key()
     assert s.key_entry.get_text() == "" and not s.key_msg.has_css_class("hs-error")
+
+
+@needs_display
+def test_waybar_placement_hides_corner_and_monitor(expanded):
+    _, v, s, acts, _ = expanded
+    v.show_tab("settings")
+    assert s._placement_btns["floating"].has_css_class("on")
+    assert all(w.get_visible() for w in s._floating_only)
+    s._placement_btns["waybar"].emit("clicked")
+    assert ("placement", "waybar") in acts.calls
+    assert s._placement_btns["waybar"].has_css_class("on")
+    assert not any(w.get_visible() for w in s._floating_only)

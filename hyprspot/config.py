@@ -13,6 +13,7 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 TOKEN_PATH = CONFIG_DIR / "token.json"
 
 ANCHORS = ("top-left", "top-right", "bottom-left", "bottom-right")
+PLACEMENTS = ("floating", "waybar")
 DEFAULT_MARGIN = (16, 16)
 OPACITY_MIN, OPACITY_MAX = 0.3, 1.0
 
@@ -27,6 +28,7 @@ class Config:
     collapse_delay_ms: int = 150
     opacity: float = 0.94  # fundo do widget: 1 = opaco
     blur: bool = True  # desfoque do Hyprland atrás do widget
+    placement: str = "floating"  # floating | waybar (um item na barra abre o player embaixo)
 
 
 def _read(path: Path) -> dict:
@@ -56,6 +58,8 @@ def load_config(path: Path = CONFIG_PATH, token_path: Path = TOKEN_PATH) -> Conf
         c.soloist_ws = raw["soloist_ws"]
     if isinstance(raw.get("collapse_delay_ms"), int):
         c.collapse_delay_ms = raw["collapse_delay_ms"]
+    if raw.get("placement") in PLACEMENTS:
+        c.placement = raw["placement"]
     if isinstance(raw.get("blur"), bool):
         c.blur = raw["blur"]
     o = raw.get("opacity")
