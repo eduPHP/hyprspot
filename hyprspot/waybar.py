@@ -24,6 +24,7 @@ WAYBAR_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / 
 MODULE = "custom/hyprspot"
 MAX_CHARS = 40
 ICON_PLAY, ICON_PAUSE, ICON_NOTE = "\U000f040a", "\U000f03e4", "\U000f075a"  # Nerd Font (md-play, md-pause, md-music)
+ICON_PREV, ICON_NEXT = "\U000f04ae", "\U000f04ad"  # md-skip-previous, md-skip-next
 HIDDEN = {"text": "", "tooltip": "", "class": "hidden"}
 
 
@@ -71,14 +72,27 @@ def write_status(data: dict | None, path: Path = STATUS_PATH) -> bool:
     return True
 
 
-def stream(path: Path = STATUS_PATH, out=sys.stdout, poll_s: float = 0.25, once: bool = False) -> None:
-    """O `exec` do item: uma linha por mudança do arquivo de estado."""
+def control(main: dict, kind: str) -> dict:
+    """Os botões ao lado do item: somem com ele (flutuando, app fechado ou Soloist desconectado)."""
+    cls = main.get("class")
+    classes = cls if isinstance(cls, list) else [cls]
+    if not main.get("text") or "hidden" in classes or "disconnected" in classes:
+        return dict(HIDDEN)
+    if kind == "prev":
+        return {"text": ICON_PREV, "tooltip": "Faixa anterior", "class": "control"}
+    return {"text": ICON_NEXT, "tooltip": "Próxima faixa", "class": "control"}
+
+
+def stream(path: Path = STATUS_PATH, out=sys.stdout, poll_s: float = 0.25, once: bool = False,
+           kind: str = "main") -> None:
+    """O `exec` de cada item (main, prev, next): uma linha por mudança do arquivo de estado."""
     last = None
     while True:
         try:
-            line = path.read_text().strip() or json.dumps(HIDDEN)
-        except OSError:
-            line = json.dumps(HIDDEN)
+            main = json.loads(path.read_text() or "null") or dict(HIDDEN)
+        except (OSError, ValueError):
+            main = dict(HIDDEN)
+        line = json.dumps(main if kind == "main" else control(main, kind), ensure_ascii=False)
         if line != last:
             out.write(line + "\n")
             out.flush()
@@ -89,9 +103,14 @@ def stream(path: Path = STATUS_PATH, out=sys.stdout, poll_s: float = 0.25, once:
 
 
 # ---------------------------------------------------------------------- config da Waybar
-def module_block(bin_dir: Path) -> str:
+PREV, NEXT = MODULE + "-prev", MODULE + "-next"
+MODULES = (PREV, MODULE, NEXT)
+
+
+def module_block(bin_dir: Path, name: str = MODULE) -> str:
     ctl = bin_dir / "hyprspot-ctl"
-    return f'''  // hyprspot: some da barra quando o hyprspot está flutuando (Ajustes > Posição)
+    if name == MODULE:
+        return f'''  // hyprspot: some da barra quando o hyprspot está flutuando (Ajustes > Posição)
   "{MODULE}": {{
     "exec": "{ctl} waybar",
     "return-type": "json",
@@ -104,41 +123,69 @@ def module_block(bin_dir: Path) -> str:
     "on-scroll-down": "{ctl} volume-down"
   }},
 '''
+    kind = "prev" if name == PREV else "next"
+    return f'''  "{name}": {{
+    "exec": "{ctl} waybar {kind}",
+    "return-type": "json",
+    "restart-interval": 5,
+    "tooltip": true,
+    "on-click": "{ctl} media {kind}"
+  }},
+'''
 
 
 STYLE_BLOCK = """
 /* custom/hyprspot (hyprspot na Waybar) */
-#custom-hyprspot { padding: 0 7px; margin: 3px 4px; border-radius: 5px; }
+#custom-hyprspot { padding: 0 7px; margin: 3px 2px; border-radius: 5px; }
 #custom-hyprspot.paused, #custom-hyprspot.idle { color: @muted; }
 #custom-hyprspot.open { background-color: alpha(@accent, 0.18); color: @accent; }
 #custom-hyprspot.disconnected { background-color: alpha(@red, 0.15); color: @red; }
 """
+CONTROL_STYLE = """
+/* custom/hyprspot-prev e -next: anterior / próxima ao lado do item */
+#custom-hyprspot-prev, #custom-hyprspot-next { padding: 0 5px; margin: 3px 0; border-radius: 5px; color: @muted; }
+#custom-hyprspot-prev:hover, #custom-hyprspot-next:hover { color: @foreground; background-color: alpha(@foreground, 0.08); }
+"""
+
+
+def _quoted(name: str) -> str:
+    return f'"{name}"'
 
 
 def add_module(config_text: str, bin_dir: Path) -> str | None:
-    """Põe o item no início de modules-right e a definição antes do fim. None: já está, ou não deu."""
-    if f'"{MODULE}"' in config_text:
+    """Põe anterior, item e próxima no início de modules-right (ou troca o item antigo pelos três) e as
+    definições antes do fim. None: já está tudo, ou não deu."""
+    text = config_text
+    i = text.find('"modules-right"')
+    j = text.find("[", i) if i >= 0 else -1
+    k = text.find("]", j) if j >= 0 else -1
+    if k < 0:
         return None
-    key = '"modules-right"'
-    i = config_text.find(key)
-    if i < 0:
+    listed = text[j + 1:k]
+    trio = ", ".join(_quoted(m) for m in MODULES)
+    if all(_quoted(m) in listed for m in MODULES):
+        pass
+    elif _quoted(MODULE) in listed and not any(_quoted(m) in listed for m in (PREV, NEXT)):
+        text = text[: j + 1] + listed.replace(_quoted(MODULE), trio, 1) + text[k:]
+    else:
+        first = listed.lstrip()
+        sep = ", " if first else ""
+        text = text[: j + 1] + trio + sep + listed.lstrip(" ") + text[k:]
+    missing = [m for m in MODULES if f"{_quoted(m)}:" not in text and f"{_quoted(m)} :" not in text]
+    if text == config_text and not missing:
         return None
-    j = config_text.find("[", i)
-    end = config_text.rfind("}")
-    if j < 0 or end < 0:
-        return None
-    first = config_text[j + 1:].lstrip()
-    sep = ", " if not first.startswith("]") else ""
-    text = config_text[: j + 1] + f'"{MODULE}"{sep}' + config_text[j + 1:].lstrip(" ")
-    end = text.rfind("}")
-    before = text[:end].rstrip()
-    if not before.endswith((",", "{")):
-        before += ","
-    return before + "\n\n" + module_block(bin_dir).rstrip().rstrip(",") + "\n" + text[end:]
+    if missing:
+        end = text.rfind("}")
+        before = text[:end].rstrip()
+        if not before.endswith((",", "{")):
+            before += ","
+        blocks = "".join(module_block(bin_dir, m) for m in missing).rstrip().rstrip(",")
+        text = before + "\n\n" + blocks + "\n" + text[end:]
+    return text
 
 
 def install(bin_dir: Path, waybar_dir: Path = WAYBAR_DIR) -> str:
-    """Adiciona o item à config e o estilo à folha da Waybar, com backup. Devolve o que fez."""
+    """Adiciona os itens à config e o estilo à folha da Waybar, com backup. Devolve o que fez."""
     cfg = next((p for p in (waybar_dir / "config.jsonc", waybar_dir / "config") if p.exists()), None)
     if cfg is None:
         return "sem config da Waybar"
@@ -150,8 +197,12 @@ def install(bin_dir: Path, waybar_dir: Path = WAYBAR_DIR) -> str:
         cfg.write_text(new)
         done.append("config")
     css = waybar_dir / "style.css"
-    if css.exists() and "#custom-hyprspot" not in css.read_text():
-        shutil.copy2(css, css.with_name(f"style.css.bak.hyprspot.{stamp}"))
-        css.write_text(css.read_text().rstrip("\n") + "\n" + STYLE_BLOCK)
-        done.append("estilo")
+    if css.exists():
+        old = css.read_text()
+        extra = ("" if "#custom-hyprspot {" in old else STYLE_BLOCK) + \
+                ("" if "#custom-hyprspot-prev" in old else CONTROL_STYLE)
+        if extra:
+            shutil.copy2(css, css.with_name(f"style.css.bak.hyprspot.{stamp}"))
+            css.write_text(old.rstrip("\n") + "\n" + extra)
+            done.append("estilo")
     return ", ".join(done) or "já instalado"

@@ -61,8 +61,10 @@ def _jsonc(text):
 def test_add_module_puts_it_first_on_the_right_and_stays_valid():
     new = waybar.add_module(CONFIG, Path("/b"))
     data = _jsonc(new)
-    assert data["modules-right"] == ["custom/hyprspot", "bluetooth", "cpu"]
+    assert data["modules-right"] == ["custom/hyprspot-prev", "custom/hyprspot", "custom/hyprspot-next", "bluetooth", "cpu"]
     assert data["custom/hyprspot"]["on-click"] == "/b/hyprspot-ctl bar-toggle"
+    assert data["custom/hyprspot-prev"]["on-click"] == "/b/hyprspot-ctl media prev"
+    assert data["custom/hyprspot-next"]["exec"] == "/b/hyprspot-ctl waybar next"
     assert waybar.add_module(new, Path("/b")) is None  # idempotente
 
 
@@ -73,3 +75,25 @@ def test_install_backs_up_and_is_idempotent(tmp_path):
     assert len(list(tmp_path.glob("config.jsonc.bak.hyprspot.*"))) == 1
     assert "#custom-hyprspot" in (tmp_path / "style.css").read_text()
     assert waybar.install(Path("/b"), tmp_path) == "já instalado"
+
+
+OLD_INSTALL = """{
+  "modules-right": ["custom/hyprspot", "bluetooth"],
+  "custom/hyprspot": { "exec": "x" }
+}
+"""
+
+
+def test_upgrade_wraps_the_old_item_with_prev_and_next():
+    data = _jsonc(waybar.add_module(OLD_INSTALL, Path("/b")))
+    assert data["modules-right"] == ["custom/hyprspot-prev", "custom/hyprspot", "custom/hyprspot-next", "bluetooth"]
+    assert data["custom/hyprspot"] == {"exec": "x"}  # a definição antiga fica como está
+    assert "custom/hyprspot-next" in data
+
+
+def test_controls_follow_the_main_item():
+    out = io.StringIO()
+    assert waybar.control({"text": "x", "class": "playing"}, "prev")["text"] == waybar.ICON_PREV
+    assert waybar.control({"text": "x", "class": ["open", "paused"]}, "next")["text"] == waybar.ICON_NEXT
+    assert waybar.control(dict(waybar.HIDDEN), "next")["text"] == ""
+    assert waybar.control({"text": waybar.ICON_NOTE, "class": "disconnected"}, "prev")["text"] == ""

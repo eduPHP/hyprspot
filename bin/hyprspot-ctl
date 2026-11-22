@@ -26,7 +26,7 @@ case "${1:-}" in
     exec playerctl "$p"
     ;;
   waybar)  # o "exec" do item custom/hyprspot: uma linha JSON por mudança
-    exec "$HYPRSPOT" waybar-status
+    exec "$HYPRSPOT" waybar-status ${2:+"$2"}
     ;;
   bar-toggle | volume-up | volume-down)
     act "$1" && exit 0

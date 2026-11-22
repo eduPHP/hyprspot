@@ -47,6 +47,14 @@ BAR_REOPEN_GUARD_S = 0.4  # clicar no item com o player aberto: o "clicou fora" 
 VOLUME_STEP = 5
 
 
+def install_waybar() -> None:
+    """Itens e estilo na Waybar (idempotente; versões novas acrescentam o que faltar)."""
+    done = waybar.install(bin_dir())
+    if "config" in done:
+        # a Waybar relê a config com SIGUSR2 (o estilo ela recarrega sozinha)
+        subprocess.run(["pkill", "-SIGUSR2", "-x", "waybar"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def bin_dir() -> Path:
     """Onde a Waybar acha o hyprspot-ctl: o link do install.sh, ou o próprio repositório."""
     local = Path.home() / ".local" / "bin"
@@ -103,11 +111,7 @@ class SettingsBridge:
         self.app.config.placement = placement
         update_config(CONFIG_PATH, placement=placement)
         if placement == "waybar":
-            done = waybar.install(bin_dir())
-            if "config" in done or "estilo" in done:
-                # a Waybar relê a config com SIGUSR2 (o estilo ela já recarrega sozinha)
-                subprocess.run(["pkill", "-SIGUSR2", "-x", "waybar"], stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL)
+            install_waybar()
         self.app.win.set_placement(placement)
         self.app.expanded.set_dropdown(placement == "waybar")
         self.app.update_bar()
@@ -214,6 +218,7 @@ class HyprspotApp(Gtk.Application):
         self.client.connect("event", self._on_event)
         self.client.connect("connection-changed", self._on_connection)
         if self.config.placement == "waybar":
+            install_waybar()
             self.win.set_visible(False)  # só aparece quando clicam no item da barra
         else:
             self.win.present()

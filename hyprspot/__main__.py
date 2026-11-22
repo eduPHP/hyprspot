@@ -5,7 +5,7 @@ from hyprspot.cli import HELP, parse_args
 
 
 def main(argv: list[str]) -> int:
-    cmd, _opts = parse_args(argv)
+    cmd, opts = parse_args(argv)
     if cmd == "version":
         print(f"hyprspot {__version__}")
         return 0
@@ -30,7 +30,7 @@ def main(argv: list[str]) -> int:
         from hyprspot.waybar import stream
 
         try:
-            stream()
+            stream(kind=opts.get("kind", "main"))
         except (KeyboardInterrupt, BrokenPipeError):
             pass
         return 0

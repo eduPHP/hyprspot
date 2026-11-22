@@ -31,3 +31,11 @@ def test_remote_commands_map_to_actions():
     assert ACTIONS["play-pause"] == "play-pause"
     assert ACTIONS["quit"] == "quit"
     assert "login" not in ACTIONS and "run" not in ACTIONS
+
+
+
+def test_waybar_status_kinds():
+    from hyprspot.cli import parse_args
+    assert parse_args(["waybar-status"]) == ("waybar-status", {"kind": "main"})
+    assert parse_args(["waybar-status", "prev"]) == ("waybar-status", {"kind": "prev"})
+    assert parse_args(["waybar-status", "x"])[0] == "help"
