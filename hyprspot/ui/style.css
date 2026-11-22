@@ -14,6 +14,8 @@ window.hs-window > * {
 .hs-compact { border-radius: 14px; padding: 7px 8px; }
 /* arrastando para mover: destaca o widget até soltar */
 window.hs-dragging .hs-root { border-color: @hs_accent; }
+/* arrastando sobre outro monitor: o widget vai para lá ao soltar */
+window.hs-crossing .hs-root { opacity: 0.55; }
 .hs-clip { border-radius: 14px; }
 .hs-expanded { border-radius: 16px; border-color: alpha(@hs_accent, 0.45); background-color: alpha(@hs_base, 0.97); }
 

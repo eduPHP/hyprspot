@@ -306,8 +306,10 @@ def test_margin_and_screen_position_convert_both_ways():
 
 
 def test_drag_carries_the_widget_to_the_other_monitor(win):
-    # o widget não para na borda do monitor onde começou: segue o cursor para o vizinho,
-    # a layer passa a ser desse monitor e a margem é contada a partir dele
+    # o widget não fica preso ao monitor onde começou: soltando com o cursor no vizinho, ele vai
+    # para lá (a layer passa a ser desse monitor e a margem é contada a partir dele). Enquanto o
+    # botão está apertado ele fica no monitor de origem, encostado na borda: trocar de monitor
+    # recria a superfície e o Hyprland perde o arrasto.
     w, _ls = win
     saved = []
     w._on_margin_changed = saved.append
@@ -322,13 +324,29 @@ def test_drag_carries_the_widget_to_the_other_monitor(win):
     w._drag_update(g, -50, 0, left=True)
     w._drag_tick()
     assert w.bound == [] and w.margin == (1016, 16)
-    w.fake_cursor["pos"] = (2000.0, 600.0)           # já no ultrawide
+    w.fake_cursor["pos"] = (2000.0, 600.0)           # cursor já no ultrawide
     w._drag_tick()
-    assert w.bound == ["HDMI-A-1"]
+    assert w.bound == [] and w.margin[0] == 1600 - 320   # encostado na borda esquerda do notebook
+    assert w.has_css_class("hs-crossing")
+    w._drag_end(g, 0, 0, left=True)
+    assert w.bound == ["HDMI-A-1"] and w.output == "HDMI-A-1"
     # agarrado 176 × 30 px dentro do widget: o canto vai para (1824, 570) no ultrawide
     assert w.margin == (2560 - 320 - 1824, 1054 - 64 - (570 - 26))
+    assert saved == [w.margin] and not w.has_css_class("hs-crossing")
+
+
+def test_unbound_widget_is_not_rebound_when_dropped_on_its_own_monitor(win):
+    w, _ls = win
+    w.margin = (16, 16)
+    w._horiz, w._vert = "right", "bottom"
+    w.fake_cursor["outs"] = [LEFT, RIGHT]             # w.output == "": o compositor escolheu
+    g = FakeGesture()
+    w.fake_cursor["pos"] = (2400.0, 1000.0)
+    w._drag_begin(g, 0, 0, left=True)
+    w.fake_cursor["pos"] = (2300.0, 900.0)
+    w._drag_update(g, -100, -100, left=True)
     w._drag_end(g, 0, 0, left=True)
-    assert saved == [w.margin] and w.output == "HDMI-A-1"
+    assert w.bound == [] and w.margin == (116, 116)
 
 
 def test_pushing_against_a_shared_edge_is_not_a_hide_request(win):
@@ -347,33 +365,6 @@ def test_pushing_against_a_shared_edge_is_not_a_hide_request(win):
     w._drag_update(g, 55, 0, left=True)
     w._drag_end(g, 0, 0, left=True)
     assert hints == [] and w.margin[0] == 0 and w.bound == []
-
-
-def test_drag_survives_the_gesture_cancel_caused_by_changing_monitor(win):
-    # trocar a layer de monitor recria a superfície e o GTK cancela o gesto: o widget tem de
-    # continuar seguindo o cursor até o botão ser solto de verdade
-    w, _ls = win
-    saved = []
-    w._on_margin_changed = saved.append
-    w.margin = (16, 16)
-    w._horiz, w._vert = "right", "bottom"
-    w.output = "eDP-1"
-    w.fake_cursor["outs"] = [LEFT, RIGHT]
-    g = FakeGesture()
-    w.fake_cursor["pos"] = (4000.0, 850.0)
-    w._drag_begin(g, 0, 0, left=True)
-    w.fake_cursor["pos"] = (2400.0, 850.0)
-    w._drag_update(g, -50, 0, left=True)
-    w._drag_tick()
-    assert w.bound == ["HDMI-A-1"]
-    w._drag_cancelled()
-    w._drag_end(g, 0, 0, left=True)
-    assert saved == [] and w._carry_id                # ainda carregando
-    w.fake_cursor["pos"] = (1200.0, 500.0)
-    w._drag_tick()
-    m = w.margin
-    w._finish_drag()                                   # o soltar chegou
-    assert saved == [m] and not w._carry_id and not w.has_css_class("hs-dragging")
 
 
 def test_saved_monitor_is_bound_at_startup(monkeypatch):

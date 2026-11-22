@@ -1,7 +1,6 @@
 """Janela layer-shell (OVERLAY) que alterna entre compacto e expandido."""
 from __future__ import annotations
 
-import time
 from typing import Callable
 
 import gi
@@ -17,9 +16,6 @@ from hyprspot.focus import Output, hypr_cursor, hypr_outputs, output_at  # noqa:
 EDGES = {"top": LS.Edge.TOP, "bottom": LS.Edge.BOTTOM, "left": LS.Edge.LEFT, "right": LS.Edge.RIGHT}
 DRAG_THRESHOLD = 8  # px; abaixo disso o botão esquerdo continua sendo um clique
 PUSH_OFFSCREEN_PX = 48  # empurrar além da borda mais que isto conta como "quero tirar da tela"
-REMAP_GRACE_S = 0.5  # trocar de monitor recria a layer e o GTK cancela o arrasto logo em seguida
-CARRY_TIMEOUT_MS = 15000  # segurança: sem notícia do botão, larga o widget onde está
-BUTTONS = Gdk.ModifierType.BUTTON1_MASK | Gdk.ModifierType.BUTTON2_MASK
 
 
 def drag_margin(start: tuple[int, int], dx: float, dy: float, right: bool, bottom: bool) -> tuple[int, int]:
@@ -87,7 +83,6 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         LS.set_exclusive_zone(self, 0)
         self._outputs = outputs
         self.output = ""  # monitor ao qual a layer está presa ("" = o compositor escolhe)
-        self._switched_at = 0.0
         if config.monitor:
             self._bind_output(config.monitor)
         vert, horiz = config.anchor.split("-")
@@ -113,8 +108,7 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         self._drag_outs: list[Output] = []
         self._drag_out: Output | None = None
         self._grab_offset = (0.0, 0.0)
-        self._carry_id = self._carry_tick = 0
-        self._carry = False
+        self._drag_home: str | None = None  # monitor onde o arrasto começou (a layer fica nele até soltar)
         self._drag_overshoot = 0.0
         self._on_push_offscreen = on_push_offscreen
         self._drag_start = self.margin
@@ -128,7 +122,6 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             drag.connect("drag-begin", lambda g, x, y, lf=left: self._drag_begin(g, x, y, left=lf))
             drag.connect("drag-update", lambda g, x, y, lf=left: self._drag_update(g, x, y, left=lf))
             drag.connect("drag-end", lambda g, x, y, lf=left: self._drag_end(g, x, y, left=lf))
-            drag.connect("cancel", lambda g, _s: self._drag_cancelled())
             self.add_controller(drag)
 
         # Com o mouse parado sobre o compacto, o widget pega o teclado (para "q" fechar);
@@ -182,9 +175,7 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             LS.set_keyboard_mode(self, LS.KeyboardMode.EXCLUSIVE)
             self._grabbed = True
 
-    def _on_motion(self, ctrl, x: float, y: float) -> None:
-        if self._carry_id and not (ctrl.get_current_event_state() & BUTTONS):
-            self._finish_drag()  # o botão já foi solto
+    def _on_motion(self, _ctrl, x: float, y: float) -> None:
         # Com o teclado exclusivo, o Hyprland continua mandando o movimento para o widget
         # mesmo com o cursor fora dele e não manda "leave". Sem isto, o widget prendia o
         # teclado e o mouse (e um "q" digitado em outra janela o fechava).
@@ -246,14 +237,13 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         return clamp_margin(self.margin, size, out.area) if out else self.margin
 
     def _drag_begin(self, _g, _x: float, _y: float, left: bool) -> None:
-        if self._carry_id:
-            self._finish_drag()
         self._drag_start = self._shown_margin  # no expandido pode estar ajustada para caber
         self._dragging = False
         self._drag_cursor0 = self._cursor_pos()
         self._drag_outs = self._outputs() if self._drag_cursor0 else []
         # o cursor está sobre o widget: o monitor dele é o do widget
         self._drag_out = output_at(self._drag_outs, *self._drag_cursor0) if self._drag_outs else None
+        self._drag_home = self._drag_out.name if self._drag_out else None
         if self._drag_out:
             x, y = margin_to_pos(self._drag_start, self._size(), self._drag_out, *self._anchors())
             self._grab_offset = (self._drag_cursor0[0] - x, self._drag_cursor0[1] - y)
@@ -272,7 +262,14 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             self._tick_id = self.add_tick_callback(lambda *_: (self._drag_tick(), True)[1])
             self._drag_tick()
 
-    def _margin_at_cursor(self) -> tuple[tuple[int, int], Output | None] | None:
+    def _margin_at_cursor(self, final: bool = False) -> tuple[tuple[int, int], Output | None] | None:
+        """Margem para a posição atual do cursor, e o monitor a que ela se refere.
+
+        Trocar a layer de monitor recria a superfície e o arrasto se perde (o Hyprland tira o
+        botão apertado da superfície nova). Por isso, enquanto o botão está apertado, o widget
+        fica no monitor onde o arrasto começou, encostado na borda mais próxima do cursor;
+        só ao soltar (final=True) ele vai para o monitor sob o cursor.
+        """
         c0 = self._drag_cursor0
         c = self._cursor_pos() if c0 is not None else None
         if c is None:
@@ -283,68 +280,45 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             sx, sy = -1 if right else 1, -1 if bottom else 1
             raw = (self._drag_start[0] + sx * (c[0] - c0[0]), self._drag_start[1] + sy * (c[1] - c0[1]))
             return (max(0, int(raw[0])), max(0, int(raw[1]))), None
-        # o widget vai para o monitor sob o cursor, mantendo o ponto que foi agarrado sob ele
-        out = output_at(self._drag_outs, *c)
+        target = output_at(self._drag_outs, *c)
+        home = next((o for o in self._drag_outs if o.name == self._drag_home), target)
+        out = target if final else home
+        # o ponto que foi agarrado continua sob o cursor
         pos = (c[0] - self._grab_offset[0], c[1] - self._grab_offset[1])
         raw = pos_to_margin(pos, size, out, right, bottom)
         m = clamp_margin((int(raw[0]), int(raw[1])), size, out.area)  # fora da tela: ponto visível mais próximo
         self._drag_overshoot = offscreen_push(raw, m, size, out, self._drag_outs, right, bottom)
+        # aviso visual: soltar agora leva o widget para o outro monitor
+        if target is not home and not final:
+            self.add_css_class("hs-crossing")
+        else:
+            self.remove_css_class("hs-crossing")
         return m, out
 
     def _drag_tick(self) -> None:
-        got = self._margin_at_cursor() if (self._dragging or self._carry_id) else None
-        if got is None:
-            return
-        moved_out = got[1] is not None and got[1].name != self.output
-        if moved_out:
-            self._switched_at = time.monotonic()
-        if moved_out or got[0] != self.margin:
-            self._drag_tick_to(*got)
-
-    def _drag_cancelled(self) -> None:
-        if self._dragging and time.monotonic() - self._switched_at < REMAP_GRACE_S:
-            self._carry = True
+        got = self._margin_at_cursor() if self._dragging else None
+        if got is not None and got[0] != self.margin:
+            self.margin = got[0]
+            self._apply_margin()
 
     def _drag_end(self, _g, dx: float, dy: float, left: bool) -> None:
         if not self._dragging:
             return
-        if self._carry:
-            # o gesto morreu porque a layer mudou de monitor, não porque o botão foi solto:
-            # o widget continua seguindo o cursor até um movimento chegar sem botão apertado (_on_motion).
-            # (EventControllerLegacy não serve: no PyGObject o evento chega como None, e o processo caía.)
-            self._carry = False
-            if self._tick_id:  # o relógio de quadros da superfície antiga não é confiável aqui
-                self.remove_tick_callback(self._tick_id)
-                self._tick_id = 0
-            self._carry_tick = GLib.timeout_add(16, lambda: (self._drag_tick(), True)[1])
-            self._carry_id = GLib.timeout_add(CARRY_TIMEOUT_MS, lambda: (self._finish_drag(), False)[1])
-            return
-        self._finish_drag(dx, dy)
-
-    def _finish_drag(self, dx: float = 0.0, dy: float = 0.0) -> None:
-        if self._carry_id:
-            GLib.source_remove(self._carry_id)
-            GLib.source_remove(self._carry_tick)
-            self._carry_id = self._carry_tick = 0
         self._dragging = False
         if self._tick_id:
             self.remove_tick_callback(self._tick_id)
             self._tick_id = 0
         self.remove_css_class("hs-dragging")
         self.set_cursor(None)
-        got = self._margin_at_cursor()
+        got = self._margin_at_cursor(final=True)
         if got is not None:
-            self._drag_tick_to(*got)
+            self.margin, out = got
+            self._apply_margin()
+            if out is not None and out.name != self.output and (self.output or out.name != self._drag_home):
+                self._bind_output(out.name)  # outro monitor: a layer é recriada lá
         else:
             self.margin = drag_margin(self._drag_start, dx, dy, *self._anchors())
             self._apply_margin()
         self._on_margin_changed(self.margin)
         if self._drag_overshoot > PUSH_OFFSCREEN_PX and self._on_push_offscreen:
             self._on_push_offscreen()
-
-    def _drag_tick_to(self, m: tuple[int, int], out: Output | None) -> None:
-        self.margin = m
-        self._apply_margin()
-        if out is not None and out.name != self.output:
-            # outro monitor: a layer é recriada lá e o GTK costuma cancelar o gesto (_drag_cancelled)
-            self._bind_output(out.name)
