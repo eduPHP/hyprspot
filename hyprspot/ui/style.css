@@ -139,3 +139,5 @@ entry.hs-key {
   color: @hs_fg; font-size: 13px; box-shadow: none; outline: none;
 }
 entry.hs-key:focus-within { border-color: @hs_accent; }
+button.hs-gear { min-width: 36px; min-height: 36px; border-radius: 10px; color: @hs_sub; }
+button.hs-gear.selected { background-color: @hs_line; color: @hs_fg; }

@@ -92,9 +92,11 @@ class ExpandedView(Gtk.Box):
         tabs.append(self.tab_pl)
         tabs.append(self.tab_sr)
         self.tab_st = None
-        if self.settings is not None:
-            self.tab_st = self._tab("Ajustes", "emblem-system-symbolic", "settings")
-            tabs.append(self.tab_st)
+        if self.settings is not None:  # só o ícone, à esquerda das abas
+            self.tab_st = icon_button("emblem-system-symbolic", "Ajustes", lambda: self.show_tab("settings"),
+                                      "hs-btn", "hs-gear")
+            self.tab_st.set_valign(Gtk.Align.CENTER)
+            bar.append(self.tab_st)
         bar.append(tabs)
         bar.append(icon_button("pan-down-symbolic", "Recolher", self.on_collapse))
         return bar
