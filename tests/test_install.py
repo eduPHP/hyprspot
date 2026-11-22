@@ -55,7 +55,7 @@ def test_install_writes_own_conf_and_sources_it(tmp_path):
     assert f"exec-once = {tmp_path}/.local/bin/hyprspot" in conf
     assert r"match:class ^(dev\.hyprspot\.Setup)$, float on" in conf
     # sem ignore_alpha o blur pinta o retângulo inteiro, e os cantos arredondados ficam cinza
-    assert "layerrule = match:namespace hyprspot, blur on, ignore_alpha 0.5, no_anim on" in conf
+    assert "layerrule = match:namespace hyprspot, blur on, ignore_alpha 0.2, no_anim on" in conf
     # no_anim: ao expandir/recolher o Hyprland animava a troca de tamanho esticando a imagem
     # antiga (a barra de progresso aparecia gigante por um instante)
     # as teclas de mídia e de volume ficam com o sistema: o hyprspot não desfaz nem refaz esses atalhos
