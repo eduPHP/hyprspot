@@ -171,7 +171,11 @@ def as_layer(win: Gtk.Window) -> Gtk.Window:
 def host(child: Gtk.Widget, title: str) -> Gtk.Window:
     win = as_layer(Gtk.Window(title=title, decorated=False))
     win.add_css_class("hs-window")
-    win.set_child(child)
+    # como no app (ui/window.py): o filho direto da janela é uma caixa transparente
+    # ("window.hs-window > *" no style.css); o widget dentro dela mantém o fundo do cartão
+    box = Gtk.Box()
+    box.append(child)
+    win.set_child(box)
     win.present()
     return win
 
