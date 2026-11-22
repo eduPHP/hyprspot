@@ -12,6 +12,7 @@ import os
 import socket
 import subprocess
 import time
+from dataclasses import dataclass
 
 import gi
 
@@ -65,23 +66,59 @@ def hypr_cursor() -> tuple[float, float] | None:
         return None
 
 
-def hypr_usable_area(x: float, y: float) -> tuple[int, int] | None:
-    """Largura e altura úteis (lógicas, sem o espaço reservado por painéis) do monitor em (x, y)."""
+@dataclass(frozen=True)
+class Output:
+    """Um monitor em coordenadas lógicas globais, com o espaço reservado por painéis."""
+    name: str
+    x: float
+    y: float
+    w: float
+    h: float
+    reserved: tuple[int, int, int, int] = (0, 0, 0, 0)  # esquerda, cima, direita, baixo
+    focused: bool = False
+
+    def contains(self, px: float, py: float) -> bool:
+        return self.x <= px < self.x + self.w and self.y <= py < self.y + self.h
+
+    @property
+    def area(self) -> tuple[int, int]:
+        left, top, right, bottom = self.reserved
+        return round(self.w - left - right), round(self.h - top - bottom)
+
+    @property
+    def origin(self) -> tuple[float, float]:
+        """Canto superior esquerdo da área útil."""
+        return self.x + self.reserved[0], self.y + self.reserved[1]
+
+
+def hypr_outputs() -> list[Output]:
+    """Monitores ativos do Hyprland; lista vazia sem o socket."""
     try:
         mons = json.loads(hypr_request("j/monitors") or b"")
-        areas = []
+        outs = []
         for m in mons:
             w, h = m["width"] / m["scale"], m["height"] / m["scale"]
             if m.get("transform", 0) % 2:
                 w, h = h, w
-            left, top, right, bottom = m.get("reserved") or (0, 0, 0, 0)
-            area = (round(w - left - right), round(h - top - bottom))
-            if m["x"] <= x < m["x"] + w and m["y"] <= y < m["y"] + h:
-                return area
-            areas.append((m.get("focused"), area))
-        return next((a for f, a in areas if f), areas[0][1] if areas else None)
+            res = tuple(int(v) for v in (m.get("reserved") or (0, 0, 0, 0)))
+            outs.append(Output(m["name"], float(m["x"]), float(m["y"]), w, h, res, bool(m.get("focused"))))
+        return outs
     except (ValueError, KeyError, TypeError, ZeroDivisionError):
-        return None
+        return []
+
+
+def output_at(outs: list[Output], x: float, y: float) -> Output | None:
+    """Monitor sob (x, y); fora de todos, o focado (ou o primeiro)."""
+    for o in outs:
+        if o.contains(x, y):
+            return o
+    return next((o for o in outs if o.focused), outs[0] if outs else None)
+
+
+def hypr_usable_area(x: float, y: float) -> tuple[int, int] | None:
+    """Largura e altura úteis (lógicas, sem o espaço reservado por painéis) do monitor em (x, y)."""
+    out = output_at(hypr_outputs(), x, y)
+    return out.area if out else None
 
 
 def cursor_outside_layer(namespace: str = "hyprspot") -> bool | None:

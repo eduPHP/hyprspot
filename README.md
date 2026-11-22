@@ -121,7 +121,7 @@ Por fim, abra **Settings** e cole o **Client ID** no campo. É o Client ID, não
 | Abrir uma playlist | clique nela, na lista ou na busca: ela começa a tocar e abre a tela dela, com "Tocar", "Aleatório" e a fila "A seguir". Clique numa música da fila para tocar a playlist a partir dela. Se a playlist já estiver tocando, só abre a tela. |
 | Esconder / mostrar | `Super+Alt+H` |
 | Volume | rolar o mouse sobre o widget compacto |
-| Mover o widget | arrastar o compacto com o botão esquerdo (no touchpad, um dedo) ou qualquer modo com o botão do meio. Ele não sai da área visível, e a posição fica salva. |
+| Mover o widget | arrastar o compacto com o botão esquerdo (no touchpad, um dedo) ou qualquer modo com o botão do meio. Ele passa de um monitor para outro seguindo o cursor, não sai da área visível, e a posição (e o monitor) ficam salvos. |
 | Fechar o hyprspot | `q` com o mouse parado sobre o widget, ou no expandido fora da busca. A música continua tocando. |
 | Teclado no compacto | com o mouse parado sobre o widget: `Espaço` toca/pausa, `←` `→` trocam de faixa, `q` fecha |
 | Teclado no expandido | `Esc` volta da tela da playlist e, na lista, recolhe; `Tab` troca de aba, `/` vai para a busca, `Espaço` toca/pausa, `←` `→` trocam de faixa (fora da busca), `↑` `↓` e `Enter` nos resultados |
@@ -139,7 +139,8 @@ Em `~/.config/hyprspot/config.toml`:
 
 ```toml
 anchor = "bottom-right"     # top-left | top-right | bottom-left | bottom-right
-margin = [16, 16]           # distância da borda (o arraste com o botão do meio grava aqui)
+margin = [16, 16]           # distância da borda (o arraste grava aqui)
+monitor = ""                # conector, ex. "HDMI-A-1"; vazio = o monitor focado ao abrir (o arraste grava aqui)
 collapse_delay_ms = 150     # espera antes de recolher ao perder o foco
 ```
 

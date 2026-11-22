@@ -34,3 +34,12 @@ def test_save_margin_roundtrip(tmp_path):
     assert c.client_id == "x"
     assert c.anchor == "top-left"
     assert isinstance(c, Config)
+
+
+def test_save_margin_keeps_the_monitor_it_was_dropped_on(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('client_id = "x"\nmonitor = "eDP-1"\n')
+    save_margin(p, (40, 20), "HDMI-A-1")
+    assert load_config(p).monitor == "HDMI-A-1"
+    save_margin(p, (10, 10))                       # sem monitor conhecido: não apaga o salvo
+    assert load_config(p).monitor == "HDMI-A-1"

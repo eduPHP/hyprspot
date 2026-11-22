@@ -75,7 +75,11 @@ def save_client_id(path: Path, client_id: str, token_path: Path = TOKEN_PATH) ->
     save_config(path, c)
 
 
-def save_margin(path: Path, margin: tuple[int, int], token_path: Path = TOKEN_PATH) -> None:
+def save_margin(path: Path, margin: tuple[int, int], monitor: str | None = None,
+                token_path: Path = TOKEN_PATH) -> None:
+    """Salva a posição; `monitor` (conector, ex. "HDMI-A-1") só muda quando informado."""
     c = load_config(path, token_path)
     c.margin = (int(margin[0]), int(margin[1]))
+    if monitor:
+        c.monitor = monitor
     save_config(path, c)

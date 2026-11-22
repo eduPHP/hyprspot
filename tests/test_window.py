@@ -4,6 +4,8 @@ import types
 
 import pytest
 
+from hyprspot.focus import Output
+
 pytestmark = pytest.mark.skipif(not os.environ.get("WAYLAND_DISPLAY"), reason="sem display")
 
 
@@ -41,10 +43,12 @@ def win(monkeypatch):
     monkeypatch.setattr(W, "EDGES", {"top": "top", "bottom": "bottom", "left": "left", "right": "right"})
     compact = Gtk.Box()
     compact.set_size_request(320, 64)
-    cursor = {"pos": None, "area": None}
+    cursor = {"pos": None, "outs": []}
     w = W.HyprspotWindow(None, Config(client_id=""), compact, None, lambda m: None,
-                         cursor_pos=lambda: cursor["pos"], screen_area=lambda x, y: cursor["area"])
+                         cursor_pos=lambda: cursor["pos"], outputs=lambda: cursor["outs"])
     w.fake_cursor = cursor
+    w.bound = []
+    w._bind_output = lambda name: (w.bound.append(name), setattr(w, "output", name), True)[2]
     w.get_width = lambda: 320
     w.get_height = lambda: 64
     yield w, ls
@@ -95,6 +99,9 @@ def test_motion_outside_without_grab_does_nothing(win):
     n = len(ls.modes)
     w._on_motion(None, 296, -30)
     assert len(ls.modes) == n
+
+
+ONE = Output("eDP-1", 0, 0, 1600, 874)
 
 
 class FakeGesture:
@@ -207,7 +214,7 @@ def test_drag_off_screen_stops_at_the_nearest_visible_spot(win):
     w._on_margin_changed = saved.append
     w.margin = (16, 16)
     w._horiz, w._vert = "right", "bottom"
-    w.fake_cursor["area"] = (1600, 874)
+    w.fake_cursor["outs"] = [ONE]
     g = FakeGesture()
     w.fake_cursor["pos"] = (1400.0, 850.0)
     w._drag_begin(g, 0, 0, left=True)
@@ -235,7 +242,7 @@ def test_pushing_off_screen_triggers_the_hide_hint(win):
     w._on_push_offscreen = lambda: hints.append(1)
     w.margin = (16, 16)
     w._horiz, w._vert = "right", "bottom"
-    w.fake_cursor["area"] = (1600, 874)
+    w.fake_cursor["outs"] = [ONE]
     _drag_to(w, (1400.0 + 200, 850.0))              # 200 px além da borda direita
     assert hints == [1]
 
@@ -246,7 +253,7 @@ def test_reaching_the_edge_is_not_a_push(win):
     w._on_push_offscreen = lambda: hints.append(1)
     w.margin = (16, 16)
     w._horiz, w._vert = "right", "bottom"
-    w.fake_cursor["area"] = (1600, 874)
+    w.fake_cursor["outs"] = [ONE]
     _drag_to(w, (1400.0 + 40, 850.0))               # encosta na borda e passa só 24 px
     assert hints == [] and w.margin == (0, 16)
 
@@ -268,7 +275,7 @@ def test_expanding_near_the_top_stays_inside_the_screen(monkeypatch):
     compact.set_size_request(320, 64)
     expanded.set_size_request(360, 520)
     w = W.HyprspotWindow(None, Config(client_id="", anchor="bottom-right", margin=(16, 800)), compact, expanded,
-                         lambda m: None, cursor_pos=lambda: (1400.0, 50.0), screen_area=lambda x, y: (1600, 874))
+                         lambda m: None, cursor_pos=lambda: (1400.0, 50.0), outputs=lambda: [ONE])
     try:
         assert ls.margins == {"right": 16, "bottom": 800}
         w.set_mode("expanded")
@@ -280,5 +287,110 @@ def test_expanding_near_the_top_stays_inside_the_screen(monkeypatch):
         w.set_mode("expanded")
         w._drag_begin(FakeGesture(), 0, 0, left=False)
         assert w._drag_start == (16, 354)
+    finally:
+        w.destroy()
+
+
+# dois monitores lado a lado: notebook (1600×900 lógico, Waybar de 26 px) à direita de um ultrawide
+LEFT = Output("HDMI-A-1", 0, 0, 2560, 1080, (0, 26, 0, 0))
+RIGHT = Output("eDP-1", 2560, 0, 1600, 900, (0, 26, 0, 0))
+
+
+def test_margin_and_screen_position_convert_both_ways():
+    from hyprspot.ui.window import margin_to_pos, pos_to_margin
+    for right in (True, False):
+        for bottom in (True, False):
+            pos = margin_to_pos((30, 40), (320, 64), RIGHT, right, bottom)
+            assert pos_to_margin(pos, (320, 64), RIGHT, right, bottom) == (30, 40)
+    assert margin_to_pos((16, 16), (320, 64), RIGHT, True, True) == (2560 + 1600 - 16 - 320, 26 + 874 - 16 - 64)
+
+
+def test_drag_carries_the_widget_to_the_other_monitor(win):
+    # o widget não para na borda do monitor onde começou: segue o cursor para o vizinho,
+    # a layer passa a ser desse monitor e a margem é contada a partir dele
+    w, _ls = win
+    saved = []
+    w._on_margin_changed = saved.append
+    w.margin = (16, 16)
+    w._horiz, w._vert = "right", "bottom"
+    w.output = "eDP-1"
+    w.fake_cursor["outs"] = [LEFT, RIGHT]
+    g = FakeGesture()
+    w.fake_cursor["pos"] = (4000.0, 850.0)           # sobre o widget, no notebook
+    w._drag_begin(g, 0, 0, left=True)
+    w.fake_cursor["pos"] = (3000.0, 850.0)
+    w._drag_update(g, -50, 0, left=True)
+    w._drag_tick()
+    assert w.bound == [] and w.margin == (1016, 16)
+    w.fake_cursor["pos"] = (2000.0, 600.0)           # já no ultrawide
+    w._drag_tick()
+    assert w.bound == ["HDMI-A-1"]
+    # agarrado 176 × 30 px dentro do widget: o canto vai para (1824, 570) no ultrawide
+    assert w.margin == (2560 - 320 - 1824, 1054 - 64 - (570 - 26))
+    w._drag_end(g, 0, 0, left=True)
+    assert saved == [w.margin] and w.output == "HDMI-A-1"
+
+
+def test_pushing_against_a_shared_edge_is_not_a_hide_request(win):
+    # encostar na divisa entre os monitores não é "quero tirar da tela": do outro lado tem tela
+    w, _ls = win
+    hints = []
+    w._on_push_offscreen = lambda: hints.append(1)
+    w.margin = (16, 16)
+    w._horiz, w._vert = "right", "bottom"
+    w.output = "HDMI-A-1"
+    w.fake_cursor["outs"] = [LEFT, RIGHT]
+    g = FakeGesture()
+    w.fake_cursor["pos"] = (2500.0, 1000.0)          # agarrado na ponta esquerda do widget
+    w._drag_begin(g, 0, 0, left=True)
+    w.fake_cursor["pos"] = (2555.0, 1000.0)          # o widget passa 200+ px da divisa
+    w._drag_update(g, 55, 0, left=True)
+    w._drag_end(g, 0, 0, left=True)
+    assert hints == [] and w.margin[0] == 0 and w.bound == []
+
+
+def test_drag_survives_the_gesture_cancel_caused_by_changing_monitor(win):
+    # trocar a layer de monitor recria a superfície e o GTK cancela o gesto: o widget tem de
+    # continuar seguindo o cursor até o botão ser solto de verdade
+    w, _ls = win
+    saved = []
+    w._on_margin_changed = saved.append
+    w.margin = (16, 16)
+    w._horiz, w._vert = "right", "bottom"
+    w.output = "eDP-1"
+    w.fake_cursor["outs"] = [LEFT, RIGHT]
+    g = FakeGesture()
+    w.fake_cursor["pos"] = (4000.0, 850.0)
+    w._drag_begin(g, 0, 0, left=True)
+    w.fake_cursor["pos"] = (2400.0, 850.0)
+    w._drag_update(g, -50, 0, left=True)
+    w._drag_tick()
+    assert w.bound == ["HDMI-A-1"]
+    w._drag_cancelled()
+    w._drag_end(g, 0, 0, left=True)
+    assert saved == [] and w._carry_id                # ainda carregando
+    w.fake_cursor["pos"] = (1200.0, 500.0)
+    w._drag_tick()
+    m = w.margin
+    w._finish_drag()                                   # o soltar chegou
+    assert saved == [m] and not w._carry_id and not w.has_css_class("hs-dragging")
+
+
+def test_saved_monitor_is_bound_at_startup(monkeypatch):
+    import gi
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import Gtk
+    Gtk.init()
+    from hyprspot.config import Config
+    from hyprspot.ui import window as W
+
+    bound = []
+    monkeypatch.setattr(W, "LS", FakeLS())
+    monkeypatch.setattr(W, "EDGES", {"top": "top", "bottom": "bottom", "left": "left", "right": "right"})
+    monkeypatch.setattr(W.HyprspotWindow, "_bind_output", lambda self, name: bound.append(name) or True)
+    w = W.HyprspotWindow(None, Config(client_id="", monitor="HDMI-A-1"), Gtk.Box(), None, lambda m: None,
+                         cursor_pos=lambda: None, outputs=lambda: [])
+    try:
+        assert bound == ["HDMI-A-1"]
     finally:
         w.destroy()

@@ -96,7 +96,7 @@ class HyprspotApp(Gtk.Application):
                                      on_play_playlist=self._play_playlist,
                                      on_pick_track=self._pick_track)
         self.win = HyprspotWindow(self, self.config, self.compact, self.expanded,
-                                  lambda m: save_margin(CONFIG_PATH, m), self._on_compact_key,
+                                  lambda m: save_margin(CONFIG_PATH, m, self.win.output), self._on_compact_key,
                                   on_push_offscreen=self._hide_hint)
         self.win.connect("notify::is-active", self._on_active_changed)
         self.focus.connect("focus-lost", lambda *_: self._schedule_collapse())
