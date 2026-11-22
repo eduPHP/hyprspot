@@ -217,6 +217,7 @@ class HyprspotApp(Gtk.Application):
 
         self.client.connect("event", self._on_event)
         self.client.connect("connection-changed", self._on_connection)
+        GLib.timeout_add_seconds(1, self._tick_bar)
         if self.config.placement == "waybar":
             install_waybar()
             self.win.set_visible(False)  # só aparece quando clicam no item da barra
@@ -531,6 +532,12 @@ class HyprspotApp(Gtk.Application):
         self.state.set_soloist_days(days_left(v[1], date.today()) if v else None)
 
     # ------------------------------------------------------------------ Waybar
+    def _tick_bar(self) -> bool:
+        """A linha de progresso do item anda sozinha: o arquivo só muda a cada 1 %."""
+        if self.config.placement == "waybar" and self.state.playback.status == "playing":
+            self.update_bar()
+        return True
+
     def update_bar(self) -> None:
         """O texto do item custom/hyprspot; flutuando, o item some."""
         if self.config.placement != "waybar":

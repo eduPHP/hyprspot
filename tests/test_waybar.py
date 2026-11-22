@@ -18,10 +18,10 @@ def _pb(**kw):
 
 def test_status_playing_paused_open_and_offline():
     s = waybar.status(_pb(), False)
-    assert s["class"] == "playing" and s["text"].startswith(waybar.ICON_PAUSE)
+    assert s["class"][0] == "playing" and s["text"].startswith(waybar.ICON_PAUSE)
     assert "Californication · Red Hot Chili Peppers" in s["text"]
-    assert waybar.status(_pb(status="paused"), False)["class"] == "paused"
-    assert waybar.status(_pb(), True)["class"] == ["open", "playing"]
+    assert waybar.status(_pb(status="paused"), False)["class"] == ["paused", "p0"]
+    assert waybar.status(_pb(), True)["class"][:2] == ["open", "playing"]
     off = waybar.status(Playback(), False)
     assert off["class"] == "disconnected" and off["text"] == waybar.ICON_NOTE
 
@@ -97,3 +97,11 @@ def test_controls_follow_the_main_item():
     assert waybar.control({"text": "x", "class": ["open", "paused"]}, "next")["text"] == waybar.ICON_NEXT
     assert waybar.control(dict(waybar.HIDDEN), "next")["text"] == ""
     assert waybar.control({"text": waybar.ICON_NOTE, "class": "disconnected"}, "prev")["text"] == ""
+
+
+def test_progress_class_follows_the_position():
+    pb = _pb(status="playing", position_ms=164500, position_ts_ms=1000, speed=1.0)
+    assert waybar.status(pb, False, now_ms=1000)["class"] == ["playing", "p50"]
+    assert waybar.status(pb, False, now_ms=1000 + 33000)["class"] == ["playing", "p60"]
+    assert waybar.progress(_pb(track=None)) is None
+    assert "#custom-hyprspot.p100 { background-size: 100% 2px, 100% 2px; }" in waybar.PROGRESS_STYLE

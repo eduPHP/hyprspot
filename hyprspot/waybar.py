@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 from hyprspot.presenter import now_playing
-from hyprspot.state import Playback
+from hyprspot.state import Playback, clock_ms, position_now
 
 RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "hyprspot"
 STATUS_PATH = RUNTIME / "waybar.json"
@@ -36,7 +36,16 @@ def _cut(s: str, n: int = MAX_CHARS) -> str:
     return s if len(s) <= n else s[: n - 1].rstrip() + "…"
 
 
-def status(pb: Playback, open_: bool, context_name: str | None = None, soloist_days: int | None = None) -> dict:
+def progress(pb: Playback, now_ms: int | None = None) -> int | None:
+    """Posição da faixa em % inteiros (a classe pN desenha a linha de progresso embaixo do item)."""
+    dur = pb.track.duration_ms if pb.track else 0
+    if not dur:
+        return None
+    return max(0, min(100, position_now(pb, clock_ms() if now_ms is None else now_ms) * 100 // dur))
+
+
+def status(pb: Playback, open_: bool, context_name: str | None = None, soloist_days: int | None = None,
+           now_ms: int | None = None) -> dict:
     """O JSON do item da barra para o estado atual."""
     v = now_playing(pb, context_name, soloist_days)
     tip = "\n".join(x for x in (v.title, v.detail or v.subtitle) if x)
@@ -48,7 +57,11 @@ def status(pb: Playback, open_: bool, context_name: str | None = None, soloist_d
         line = " · ".join(x for x in (v.title, v.subtitle) if x)
         text = f"{ICON_PAUSE if v.playing else ICON_PLAY}  {_esc(_cut(line))}"
         cls = "playing" if v.playing else "paused"
-    return {"text": text, "tooltip": _esc(tip), "class": ["open", cls] if open_ else cls}
+    classes = (["open"] if open_ else []) + [cls]
+    pct = progress(pb, now_ms)
+    if pct is not None:
+        classes.append(f"p{pct}")
+    return {"text": text, "tooltip": _esc(tip), "class": classes if len(classes) > 1 else cls}
 
 
 def write_status(data: dict | None, path: Path = STATUS_PATH) -> bool:
@@ -148,6 +161,18 @@ CONTROL_STYLE = """
 """
 
 
+PROGRESS_STYLE = """
+/* custom/hyprspot: linha de progresso de 2 px embaixo do item (classe p0…p100), sobre um trilho apagado */
+#custom-hyprspot {
+  background-image: linear-gradient(@accent, @accent), linear-gradient(alpha(@foreground, 0.12), alpha(@foreground, 0.12));
+  background-repeat: no-repeat; background-position: left bottom, left bottom; background-size: 0% 2px, 100% 2px;
+}
+#custom-hyprspot.paused {
+  background-image: linear-gradient(@muted, @muted), linear-gradient(alpha(@foreground, 0.12), alpha(@foreground, 0.12));
+}
+""" + "".join(f"#custom-hyprspot.p{i} {{ background-size: {i}% 2px, 100% 2px; }}\n" for i in range(1, 101))
+
+
 def _quoted(name: str) -> str:
     return f'"{name}"'
 
@@ -200,7 +225,8 @@ def install(bin_dir: Path, waybar_dir: Path = WAYBAR_DIR) -> str:
     if css.exists():
         old = css.read_text()
         extra = ("" if "#custom-hyprspot {" in old else STYLE_BLOCK) + \
-                ("" if "#custom-hyprspot-prev" in old else CONTROL_STYLE)
+                ("" if "#custom-hyprspot-prev" in old else CONTROL_STYLE) + \
+                ("" if "#custom-hyprspot.p50 " in old else PROGRESS_STYLE)
         if extra:
             shutil.copy2(css, css.with_name(f"style.css.bak.hyprspot.{stamp}"))
             css.write_text(old.rstrip("\n") + "\n" + extra)
