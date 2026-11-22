@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Callable
 
 import gi
 
@@ -78,27 +79,33 @@ def hex(name: str) -> str:
     return colors()[name]
 
 
-_providers: list[tuple[Gtk.CssProvider, Path]] = []
+_providers: list[tuple[Gtk.CssProvider, Callable[[], str]]] = []
 _watch: dict = {"monitor": None, "pending": 0}
 
 
-def _text(path: Path) -> str:
-    return "".join(f"@define-color {k} {v};\n" for k, v in colors().items()) + path.read_text()
+def _text(body: Callable[[], str]) -> str:
+    return "".join(f"@define-color {k} {v};\n" for k, v in colors().items()) + body()
 
 
 def _reload() -> bool:
     _watch["pending"] = 0
-    for provider, path in _providers:
-        provider.load_from_string(_text(path))
+    for provider, body in _providers:
+        provider.load_from_string(_text(body))
     return False
 
 
 def load(path: Path, priority: int = Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1) -> Gtk.CssProvider:
     """Load a stylesheet with the theme colours in front of it, and keep it following the theme."""
+    return load_text(path.read_text, priority)
+
+
+def load_text(body: Callable[[], str], priority: int = Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+              ) -> Gtk.CssProvider:
+    """Like load(), for CSS generated at runtime (e.g. the user's opacity). Call refresh() after it changes."""
     provider = Gtk.CssProvider()
-    provider.load_from_string(_text(path))
+    provider.load_from_string(_text(body))
     Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, priority)
-    _providers.append((provider, path))
+    _providers.append((provider, body))
     if _watch["monitor"] is None:
         THEME_FILE.parent.mkdir(parents=True, exist_ok=True)
         mon = Gio.File.new_for_path(str(THEME_FILE)).monitor_file(Gio.FileMonitorFlags.WATCH_MOVES, None)
@@ -110,3 +117,9 @@ def load(path: Path, priority: int = Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
         mon.connect("changed", changed)
         _watch["monitor"] = mon
     return provider
+
+
+def refresh(provider: Gtk.CssProvider) -> None:
+    for p, body in _providers:
+        if p is provider:
+            p.load_from_string(_text(body))

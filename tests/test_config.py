@@ -43,3 +43,25 @@ def test_save_margin_keeps_the_monitor_it_was_dropped_on(tmp_path):
     assert load_config(p).monitor == "HDMI-A-1"
     save_margin(p, (10, 10))                       # sem monitor conhecido: não apaga o salvo
     assert load_config(p).monitor == "HDMI-A-1"
+
+
+def test_opacity_defaults_and_is_clamped(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('client_id = "x"\n')
+    assert load_config(p).opacity == 0.94
+    p.write_text('client_id = "x"\nopacity = 0.05\n')
+    assert load_config(p).opacity == 0.3
+    p.write_text('client_id = "x"\nopacity = 1\n')
+    assert load_config(p).opacity == 1.0
+    p.write_text('client_id = "x"\nopacity = "meio"\n')
+    assert load_config(p).opacity == 0.94
+
+
+def test_update_config_changes_only_the_given_fields(tmp_path):
+    from hyprspot.config import update_config
+    p = tmp_path / "config.toml"
+    p.write_text('client_id = "x"\nmargin = [40, 20]\nmonitor = "HDMI-A-1"\n')
+    update_config(p, opacity=0.55, anchor="top-left")
+    c = load_config(p)
+    assert (c.opacity, c.anchor, c.margin, c.monitor, c.client_id) == (0.55, "top-left", (40, 20), "HDMI-A-1", "x")
+    assert "opacity = 0.55\n" in p.read_text()

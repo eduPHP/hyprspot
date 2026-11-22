@@ -237,6 +237,33 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         self._capture_monitor.connect("changed", apply)
         apply()
 
+    # -- ajustes --
+    def set_anchor(self, anchor: str, margin: tuple[int, int]) -> None:
+        """Encaixa no canto `anchor` (ex. "top-left") com a margem dada."""
+        vert, horiz = anchor.split("-")
+        for edge in (self._vert, self._horiz):
+            LS.set_anchor(self, edge, False)
+            LS.set_margin(self, edge, 0)
+        self._vert, self._horiz = EDGES[vert], EDGES[horiz]
+        LS.set_anchor(self, self._vert, True)
+        LS.set_anchor(self, self._horiz, True)
+        self.margin = tuple(margin)
+        self._reapply()
+
+    def move_to_output(self, name: str) -> bool:
+        """Leva o widget ao monitor `name`, ainda dentro da área visível dele."""
+        if not self._bind_output(name):
+            return False
+        out = next((o for o in self._outputs() if o.name == name), None)
+        if out is not None:
+            self.margin = clamp_margin(self.margin, self.compact.get_size_request(), out.area)
+        self._reapply()
+        return True
+
+    def _reapply(self) -> None:
+        exp = self.mode == "expanded" and self.expanded is not None
+        self._apply_margin(self._fit_margin(self.expanded.get_size_request()) if exp else None)
+
     def toggle_hidden(self) -> None:
         self.set_visible(not self.get_visible())
 

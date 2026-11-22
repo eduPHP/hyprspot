@@ -47,8 +47,7 @@ class SystemActions:
 
     def save_key(self, key: str) -> None:
         ob.write_soloist_env(key)
-        subprocess.Popen(["sh", "-c", "systemctl --user daemon-reload; systemctl --user enable soloist.service;"
-                          " systemctl --user restart soloist.service"],
+        subprocess.Popen(["sh", "-c", ob.RESTART_SOLOIST],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def client_id(self) -> str:

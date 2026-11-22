@@ -13,16 +13,19 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 TOKEN_PATH = CONFIG_DIR / "token.json"
 
 ANCHORS = ("top-left", "top-right", "bottom-left", "bottom-right")
+DEFAULT_MARGIN = (16, 16)
+OPACITY_MIN, OPACITY_MAX = 0.3, 1.0
 
 
 @dataclass
 class Config:
     client_id: str
     anchor: str = "bottom-right"
-    margin: tuple[int, int] = (16, 16)
+    margin: tuple[int, int] = DEFAULT_MARGIN
     monitor: str = ""
     soloist_ws: str = "ws://127.0.0.1:9090"
     collapse_delay_ms: int = 150
+    opacity: float = 0.94  # fundo do widget: 1 = opaco
 
 
 def _read(path: Path) -> dict:
@@ -52,12 +55,21 @@ def load_config(path: Path = CONFIG_PATH, token_path: Path = TOKEN_PATH) -> Conf
         c.soloist_ws = raw["soloist_ws"]
     if isinstance(raw.get("collapse_delay_ms"), int):
         c.collapse_delay_ms = raw["collapse_delay_ms"]
+    o = raw.get("opacity")
+    if isinstance(o, (int, float)) and not isinstance(o, bool):
+        c.opacity = clamp_opacity(o)
     return c
+
+
+def clamp_opacity(v: float) -> float:
+    return round(max(OPACITY_MIN, min(OPACITY_MAX, float(v))), 2)
 
 
 def _toml_value(v) -> str:
     if isinstance(v, str):
         return json.dumps(v, ensure_ascii=False)
+    if isinstance(v, float):
+        return f"{v:g}"
     if isinstance(v, tuple):
         return "[" + ", ".join(str(x) for x in v) + "]"
     return str(v)
@@ -83,3 +95,12 @@ def save_margin(path: Path, margin: tuple[int, int], monitor: str | None = None,
     if monitor:
         c.monitor = monitor
     save_config(path, c)
+
+
+def update_config(path: Path, token_path: Path = TOKEN_PATH, **changes) -> Config:
+    """Relê o arquivo, troca só os campos dados e grava (a tela de ajustes usa isto)."""
+    c = load_config(path, token_path)
+    for k, v in changes.items():
+        setattr(c, k, v)
+    save_config(path, c)
+    return c

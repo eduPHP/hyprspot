@@ -33,13 +33,14 @@ case "${1:-}" in
     act quit && exit 0
     exec "$HYPRSPOT"
     ;;
-  toggle | expand-search | hide-toggle | collapse)
+  toggle | expand-search | expand-settings | hide-toggle | collapse)
     act "$1" && exit 0
     if [ "$1" = expand-search ]; then exec "$HYPRSPOT" expand --search; fi
+    if [ "$1" = expand-settings ]; then exec "$HYPRSPOT" settings; fi
     exec "$HYPRSPOT"
     ;;
   *)
-    echo "uso: hyprspot-ctl toggle|expand-search|hide-toggle|collapse|quit|open-close|media <play-pause|next|prev>" >&2
+    echo "uso: hyprspot-ctl toggle|expand-search|expand-settings|hide-toggle|collapse|quit|open-close|media <play-pause|next|prev>" >&2
     exit 2
     ;;
 esac

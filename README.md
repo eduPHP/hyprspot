@@ -14,7 +14,7 @@ Mini player de Spotify para o Hyprland. Fica sempre por cima, num canto da tela,
 </p>
 
 - **Compacto (320×64):** capa, faixa, artista, anterior / play / próxima e barra de progresso. Para ajustar o volume, role o mouse sobre ele.
-- **Expandido (360×600):** playlists, a tela de cada playlist com a fila "A seguir", busca de músicas e playlists conforme você digita, curtir, aleatório, repetir, posição da música e volume.
+- **Expandido (360×600):** playlists, a tela de cada playlist com a fila "A seguir", busca de músicas e playlists conforme você digita, curtir, aleatório, repetir, posição da música e volume. A aba **Ajustes** muda a transparência, o canto, o monitor e a chave do Soloist sem editar arquivo.
 - **Rápido:** os comandos vão direto para o player local e respondem em cerca de 15 ms. Os botões não esperam a resposta do Spotify para mudar na tela.
 - **Discreto:** não rouba o foco das outras janelas, recolhe sozinho quando você clica fora e pode ser arrastado para qualquer canto.
 
@@ -124,24 +124,34 @@ Por fim, abra **Settings** e cole o **Client ID** no campo. É o Client ID, não
 | Mover o widget | arrastar o compacto com o botão esquerdo (no touchpad, um dedo) ou qualquer modo com o botão do meio. Ele passa de um monitor para outro seguindo o cursor (o Hyprland não avisa quando você solta o botão depois de trocar de tela, então ali ele fica onde o cursor parar), não sai da área visível, e a posição (e o monitor) ficam salvos. |
 | Fechar o hyprspot | `q` com o mouse parado sobre o widget, ou no expandido fora da busca. A música continua tocando. |
 | Teclado no compacto | com o mouse parado sobre o widget: `Espaço` toca/pausa, `←` `→` trocam de faixa, `q` fecha |
-| Teclado no expandido | `Esc` volta da tela da playlist e, na lista, recolhe; `Tab` troca de aba, `/` vai para a busca, `Espaço` toca/pausa, `←` `→` trocam de faixa (fora da busca), `↑` `↓` e `Enter` nos resultados |
+| Teclado no expandido | `Esc` volta da tela da playlist e, na lista, recolhe; `Tab` troca de aba (Playlists, Buscar, Ajustes), `/` vai para a busca, `Espaço` toca/pausa, `←` `→` trocam de faixa (fora da busca), `↑` `↓` e `Enter` nos resultados |
 | Teclas de mídia e de volume | continuam com o sistema; o hyprspot não mexe nelas. Use o widget (ou os atalhos acima) para controlar o Soloist |
 
-Comandos de terminal: `hyprspot toggle | expand [--search] | collapse | hide | show | quit | play-pause | next | prev | setup | login | soloist-status | soloist-update`.
+Comandos de terminal: `hyprspot toggle | expand [--search] | settings | collapse | hide | show | quit | play-pause | next | prev | setup | login | soloist-status | soloist-update`.
 
 Para integrar a outros painéis (Waybar, eww etc.):
 - `hyprspot-ctl open-close` abre ou fecha o app;
+- `hyprspot-ctl expand-settings` abre direto na aba Ajustes;
 - `hyprspot-ctl media play-pause|next|prev` controla o Soloist mesmo com o hyprspot fechado.
 
 ### Ajustes
 
-Em `~/.config/hyprspot/config.toml`:
+A aba **Ajustes** do expandido (ou `hyprspot settings`) muda na hora, e grava em `config.toml`:
+
+- **Transparência** do fundo, de 0 % (opaco) a 70 %. Só o fundo fica transparente; textos e botões continuam nítidos, e o desfoque do Hyprland continua atrás.
+- **Canto:** leva o widget para um dos quatro cantos. Depois disso, arrastar continua funcionando.
+- **Monitor:** prende o widget a um monitor, ou "Automático" para abrir no monitor em foco.
+- **Chave do Soloist:** cole uma chave nova e clique em "Salvar e reiniciar". Ela é gravada em `soloist.env` (permissão 600) e o `soloist.service` reinicia. "Gerar chave" abre o painel do Spotify.
+- **Refazer configuração:** abre a tela de configuração (app da Web API, login e pareamento).
+
+Os mesmos valores ficam em `~/.config/hyprspot/config.toml`:
 
 ```toml
 anchor = "bottom-right"     # top-left | top-right | bottom-left | bottom-right
 margin = [16, 16]           # distância da borda (o arraste grava aqui)
 monitor = ""                # conector, ex. "HDMI-A-1"; vazio = o monitor focado ao abrir (o arraste grava aqui)
 collapse_delay_ms = 150     # espera antes de recolher ao perder o foco
+opacity = 0.94              # opacidade do fundo, de 0.3 a 1 (a aba Ajustes grava aqui)
 ```
 
 Os atalhos ficam em `~/.config/hypr/hyprspot.conf`. Esse arquivo é recriado sempre que você roda o instalador. Para trocar uma tecla, use `unbind` e `bind` num arquivo seu, carregado depois dele.

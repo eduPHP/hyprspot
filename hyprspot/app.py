@@ -1,6 +1,7 @@
 """Aplicação: instância única, ações, ligação Soloist ↔ estado ↔ UI ↔ Web API."""
 from __future__ import annotations
 
+import subprocess
 import time
 from datetime import date
 from pathlib import Path
@@ -15,8 +16,10 @@ from hyprspot import __version__, update  # noqa: E402
 from hyprspot.auth import TokenStore  # noqa: E402
 from hyprspot.cache import ArtCache, load_playlists, save_playlists  # noqa: E402
 from hyprspot.cli import ACTIONS, parse_args  # noqa: E402
-from hyprspot.config import CACHE_DIR, CONFIG_PATH, TOKEN_PATH, load_config, save_margin  # noqa: E402
-from hyprspot.focus import FocusWatcher  # noqa: E402
+from hyprspot import onboarding as ob  # noqa: E402
+from hyprspot.config import (CACHE_DIR, CONFIG_PATH, DEFAULT_MARGIN, TOKEN_PATH, load_config,  # noqa: E402
+                             save_margin, update_config)
+from hyprspot.focus import FocusWatcher, hypr_outputs  # noqa: E402
 from hyprspot.soloist import SoloistClient, repeat_commands  # noqa: E402
 from hyprspot.soloistctl import days_left, installed_version  # noqa: E402
 from hyprspot.state import (AppState, QueueSync, SkipDetector, Throttle, apply_event, clock_ms,  # noqa: E402
@@ -26,6 +29,8 @@ from hyprspot.ui.common import load_css  # noqa: E402
 from hyprspot.ui.compact import CompactView, compact_key_action  # noqa: E402
 from hyprspot.ui.cover import ArtLoader  # noqa: E402
 from hyprspot.ui.expanded import ExpandedView  # noqa: E402
+from hyprspot.ui.settings import SettingsView  # noqa: E402
+from hyprspot.ui import theme  # noqa: E402
 from hyprspot.ui.window import HyprspotWindow  # noqa: E402
 from dataclasses import replace  # noqa: E402
 
@@ -36,6 +41,70 @@ ERROR_CLEAR_MS = 2500
 SKIP_NOTICE_MS = 4000
 VOLUME_FLUSH_MS = 110
 SOLOIST_CHECK_S = 6 * 3600
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def opacity_css(opacity: float) -> str:
+    """Fundo do widget com a transparência escolhida (style.css tem os valores padrão, 0,94)."""
+    o = opacity
+    well = min(1.0, o + 0.06)  # abas e campos: um pouco mais sólidos que o cartão
+    return (f".hs-root {{ background-color: alpha(@hs_base, {o:.2f}); }}\n"
+            f".hs-expanded {{ background-color: alpha(@hs_base, {min(1.0, o + 0.03):.2f}); }}\n"
+            f".hs-footer {{ background-color: alpha(@hs_bg, {0.6 * o / 0.94:.2f}); }}\n"
+            f".hs-tabs, searchentry.hs-search, entry.hs-search, .hs-key {{ background-color: alpha(@hs_bg, {well:.2f}); }}\n")
+
+
+class SettingsBridge:
+    """O que a aba Ajustes pode fazer no app (ver hyprspot.ui.settings.SettingsActions)."""
+
+    def __init__(self, app: "HyprspotApp"):
+        self.app = app
+
+    def config(self):
+        return load_config()
+
+    def preview_opacity(self, value: float) -> None:
+        self.app.config.opacity = value
+        theme.refresh(self.app.opacity_provider)
+
+    def set_opacity(self, value: float) -> None:
+        self.preview_opacity(value)
+        update_config(CONFIG_PATH, opacity=value)
+
+    def set_anchor(self, anchor: str) -> None:
+        self.app.win.set_anchor(anchor, DEFAULT_MARGIN)
+        self.app.config.anchor = anchor
+        update_config(CONFIG_PATH, anchor=anchor, margin=tuple(self.app.win.margin))
+
+    def set_monitor(self, name: str) -> None:
+        changes = {"monitor": name}
+        if name and self.app.win.move_to_output(name):
+            changes["margin"] = tuple(self.app.win.margin)
+        update_config(CONFIG_PATH, **changes)
+
+    def monitors(self) -> list[str]:
+        return [o.name for o in sorted(hypr_outputs(), key=lambda o: (o.x, o.y))]
+
+    def key_hint(self) -> str | None:
+        return ob.read_key()
+
+    def save_key(self, text: str) -> str | None:
+        key = ob.clean_key(text)
+        if not key:
+            return "Isso não parece uma chave do Soloist. Copie de novo no painel do Spotify."
+        if key == ob.read_key():
+            return "Essa já é a chave em uso."
+        ob.write_soloist_env(key)
+        subprocess.Popen(["sh", "-c", ob.RESTART_SOLOIST], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return None
+
+    def open_key_page(self) -> None:
+        Gio.AppInfo.launch_default_for_uri(ob.SOLOIST_KEY_URL, None)
+
+    def open_setup(self) -> None:
+        subprocess.Popen([str(ROOT / "bin" / "hyprspot"), "setup"], start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class HyprspotApp(Gtk.Application):
@@ -54,7 +123,8 @@ class HyprspotApp(Gtk.Application):
         self._hide_hint_shown = False
         self.skips = SkipDetector()
         self._skipped: list[str] = []
-        for name in (*ACTIONS.values(), "expand", "expand-search", "click-anywhere", "hide-toggle"):  # inclui "quit"
+        for name in (*ACTIONS.values(), "expand", "expand-search", "expand-settings", "click-anywhere",
+                     "hide-toggle"):  # inclui "quit"
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", lambda _a, _p, n=name: self.run_action(n))
             self.add_action(act)
@@ -71,6 +141,8 @@ class HyprspotApp(Gtk.Application):
             self._build()
         if cmd == "expand":
             self.run_action("expand-search" if opts.get("search") else "expand")
+        elif cmd == "settings":
+            self.run_action("expand-settings")
         elif cmd in ACTIONS:
             self.run_action(ACTIONS[cmd])
         return 0
@@ -79,6 +151,8 @@ class HyprspotApp(Gtk.Application):
         self.hold()
         load_css()
         self.config = load_config()
+        self.opacity_provider = theme.load_text(lambda: opacity_css(self.config.opacity),
+                                                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 2)
         self.state = AppState()
         self.client = SoloistClient(self.config.soloist_ws)
         self.session = Soup.Session()
@@ -94,7 +168,8 @@ class HyprspotApp(Gtk.Application):
                                      on_quit=lambda: self.run_action("quit"),
                                      on_open_playlist=self._open_playlist,
                                      on_play_playlist=self._play_playlist,
-                                     on_pick_track=self._pick_track)
+                                     on_pick_track=self._pick_track,
+                                     settings=SettingsView(self.state, SettingsBridge(self)))
         self.win = HyprspotWindow(self, self.config, self.compact, self.expanded,
                                   lambda m: save_margin(CONFIG_PATH, m, self.win.output), self._on_compact_key,
                                   on_push_offscreen=self._hide_hint)
@@ -120,11 +195,13 @@ class HyprspotApp(Gtk.Application):
             if not self.win.get_visible():
                 self.win.set_visible(True)
             self.run_action("collapse" if self.state.ui_mode == "expanded" else "expand")
-        elif name in ("expand", "expand-search"):
+        elif name in ("expand", "expand-search", "expand-settings"):
             self.win.set_visible(True)
             self._cancel_collapse()
             if name == "expand-search":
                 self.state.set_ui(tab="search")
+            elif name == "expand-settings":
+                self.expanded.show_tab("settings")
             self.state.set_ui(mode="expanded")
             self.win.set_mode("expanded")
             self.focus.arm()
@@ -135,6 +212,8 @@ class HyprspotApp(Gtk.Application):
                 # o atalho de busca volta aos resultados; expandir à toa mantém a playlist aberta
                 reset = name == "expand-search"
                 GLib.idle_add(lambda: (self.expanded.focus_search(reset), False)[1])
+            elif self.state.tab == "settings":
+                self.expanded.settings.sync()
         elif name == "collapse":
             self._cancel_collapse()
             self.focus.disarm()

@@ -36,7 +36,8 @@ class ExpandedView(Gtk.Box):
                  on_quit: Callable[[], None] | None = None,
                  on_open_playlist: Callable[[Playlist, str], None] | None = None,
                  on_play_playlist: Callable[[str, bool], None] | None = None,
-                 on_pick_track: Callable[[str, str], None] | None = None):
+                 on_pick_track: Callable[[str, str], None] | None = None,
+                 settings: Gtk.Widget | None = None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.state, self.on_command, self.on_search, self.on_like = state, on_command, on_search, on_like
         self.on_collapse = on_collapse
@@ -54,6 +55,8 @@ class ExpandedView(Gtk.Box):
         self._loading_more = False
         self._search_offset = 0
 
+        self.settings = settings
+        self.tab_names = ("playlists", "search", "settings") if settings is not None else ("playlists", "search")
         self.append(self._build_header())
         self.stack = Gtk.Stack(vexpand=True, transition_type=Gtk.StackTransitionType.NONE)
         # cada aba tem a sua pilha: a lista e, por cima, a tela de uma playlist
@@ -61,8 +64,11 @@ class ExpandedView(Gtk.Box):
         self.pages: dict[str, PlaylistPage] = {}
         self.stack.add_named(self._nav("playlists", self._build_playlists()), "playlists")
         self.stack.add_named(self._nav("search", self._build_search()), "search")
+        if settings is not None:
+            self.stack.add_named(settings, "settings")
         self.append(self.stack)
-        self.append(self._build_footer())
+        self.footer = self._build_footer()
+        self.append(self.footer)
 
         keys = Gtk.EventControllerKey()
         keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
@@ -85,6 +91,10 @@ class ExpandedView(Gtk.Box):
         self.tab_sr = self._tab("Buscar", "system-search-symbolic", "search")
         tabs.append(self.tab_pl)
         tabs.append(self.tab_sr)
+        self.tab_st = None
+        if self.settings is not None:
+            self.tab_st = self._tab("Ajustes", "emblem-system-symbolic", "settings")
+            tabs.append(self.tab_st)
         bar.append(tabs)
         bar.append(icon_button("pan-down-symbolic", "Recolher", self.on_collapse))
         return bar
@@ -261,10 +271,13 @@ class ExpandedView(Gtk.Box):
         self._refresh_pages()
 
     def close_playlist(self, tab: str | None = None) -> None:
-        self.navs[tab or self.state.tab].set_visible_child_name("list")
+        nav = self.navs.get(tab or self.state.tab)
+        if nav is not None:
+            nav.set_visible_child_name("list")
 
     def page_open(self, tab: str) -> bool:
-        return self.navs[tab].get_visible_child_name() == "page"
+        nav = self.navs.get(tab)
+        return nav is not None and nav.get_visible_child_name() == "page"
 
     def _refresh_pages(self) -> None:
         for tab, page in self.pages.items():
@@ -274,9 +287,16 @@ class ExpandedView(Gtk.Box):
 
     # ------------------------------------------------------------------ ações
     def show_tab(self, name: str) -> None:
+        if name not in self.tab_names:
+            return
         self.state.set_ui(tab=name)
         if name == "search":
             self.focus_search(reset=False)
+        elif name == "settings":
+            self.settings.sync()
+            root = self.get_root()
+            if root is not None:
+                root.set_focus(None)  # tira o foco da busca: Espaço, setas e q voltam a ser atalhos
 
     def focus_search(self, reset: bool = True) -> None:
         """`reset`: `/` e o atalho de busca voltam aos resultados; trocar de aba mantém a playlist aberta."""
@@ -330,8 +350,15 @@ class ExpandedView(Gtk.Box):
         elif y + 46 > adj.get_value() + adj.get_page_size():
             adj.set_value(y + 46 - adj.get_page_size())
 
+    def _typing(self) -> bool:
+        if self.entry.has_focus() or self.entry.get_focus_child() is not None:
+            return True
+        root = self.get_root()
+        focus = root.get_focus() if root is not None else None
+        return isinstance(focus, (Gtk.Text, Gtk.Editable))  # inclui a chave do Soloist nos ajustes
+
     def _on_key(self, _c, keyval, _code, mods) -> bool:
-        typing = self.entry.has_focus() or (self.entry.get_focus_child() is not None)
+        typing = self._typing()
         if keyval == Gdk.KEY_Escape:
             if self.page_open(self.state.tab):  # Esc volta da tela da playlist antes de recolher
                 self.close_playlist()
@@ -339,7 +366,9 @@ class ExpandedView(Gtk.Box):
                 self.on_collapse()
             return True
         if keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
-            self.show_tab("search" if self.state.tab == "playlists" else "playlists")
+            names = self.tab_names
+            i = names.index(self.state.tab) if self.state.tab in names else 0
+            self.show_tab(names[(i + (-1 if keyval == Gdk.KEY_ISO_Left_Tab else 1)) % len(names)])
             return True
         if keyval in (Gdk.KEY_q, Gdk.KEY_Q) and not typing:
             self.on_quit()
@@ -398,7 +427,12 @@ class ExpandedView(Gtk.Box):
         tab = self.state.tab
         toggle_class(self.tab_pl, "selected", tab == "playlists")
         toggle_class(self.tab_sr, "selected", tab == "search")
+        if self.tab_st is not None:
+            toggle_class(self.tab_st, "selected", tab == "settings")
+        if tab not in self.tab_names:
+            return
         self.stack.set_visible_child_name(tab)
+        self.footer.set_visible(tab != "settings")  # os ajustes precisam da altura toda
 
     def _refresh_playlists(self) -> None:
         items = self.state.playlists

@@ -13,6 +13,8 @@ DASHBOARD_CREATE_URL = "https://developer.spotify.com/dashboard/create"
 _BUILD = "https://soloist-builds.spotifycdn.com/soloist_release_{}.tar.gz"
 _ARCH = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "arm64", "arm64": "arm64"}
 _CLIENT_ID = re.compile(r"[0-9a-f]{32}")
+RESTART_SOLOIST = ("systemctl --user daemon-reload; systemctl --user enable soloist.service;"
+                   " systemctl --user restart soloist.service")
 _KEY = re.compile(r"[A-Za-z0-9._~+/=:-]+")
 
 
@@ -45,13 +47,19 @@ def write_soloist_env(key: str, path: Path = SOLOIST_ENV) -> None:
     tmp.replace(path)
 
 
-def has_key(path: Path = SOLOIST_ENV) -> bool:
+def read_key(path: Path = SOLOIST_ENV) -> str | None:
     try:
         text = path.read_text()
     except OSError:
-        return False
-    return any(line.startswith("SOLOIST_API_KEY=") and line.split("=", 1)[1].strip()
-               for line in text.splitlines())
+        return None
+    for line in text.splitlines():
+        if line.startswith("SOLOIST_API_KEY="):
+            return line.split("=", 1)[1].strip() or None
+    return None
+
+
+def has_key(path: Path = SOLOIST_ENV) -> bool:
+    return read_key(path) is not None
 
 
 def parse_ctl_status(text: str) -> dict:

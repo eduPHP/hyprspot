@@ -65,3 +65,13 @@ def test_save_client_id_creates_file(tmp_path):
     cfg = tmp_path / "new" / "config.toml"
     save_client_id(cfg, "3f9a2c7e51d84b06a8e2f41c97d05b6e", tmp_path / "token.json")
     assert load_config(cfg, tmp_path / "token.json").client_id == "3f9a2c7e51d84b06a8e2f41c97d05b6e"
+
+
+def test_read_key(tmp_path):
+    from hyprspot.onboarding import read_key, write_soloist_env
+    p = tmp_path / "soloist.env"
+    assert read_key(p) is None
+    write_soloist_env("spak_abc", p)
+    assert read_key(p) == "spak_abc"
+    p.write_text("SOLOIST_API_KEY=\n")
+    assert read_key(p) is None

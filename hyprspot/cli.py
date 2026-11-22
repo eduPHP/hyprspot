@@ -1,7 +1,7 @@
 """Argumentos de linha de comando (puro)."""
 from __future__ import annotations
 
-SIMPLE = ("toggle", "collapse", "hide", "show", "play-pause", "next", "prev", "login", "setup", "quit",
+SIMPLE = ("toggle", "collapse", "hide", "show", "play-pause", "next", "prev", "login", "setup", "quit", "settings",
           "soloist-status", "soloist-update")
 
 # comandos repassados à instância em execução → nome da Gio.Action
@@ -15,6 +15,7 @@ HELP = """uso: hyprspot [comando]
   (sem comando)     inicia o widget
   toggle            expande/recolhe
   expand [--search] expande (na busca)
+  settings          expande na aba Ajustes
   collapse          recolhe
   hide | show       esconde/mostra o widget
   quit              fecha o hyprspot (a música continua no Soloist)
