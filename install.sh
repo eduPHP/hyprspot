@@ -58,6 +58,8 @@ hypr_conf() {
 bindd = SUPER ALT, M, hyprspot, exec, $BIN/hyprspot-ctl toggle
 bindd = SUPER ALT, B, hyprspot: buscar, exec, $BIN/hyprspot-ctl expand-search
 bindd = SUPER ALT, H, hyprspot: esconder/mostrar, exec, $BIN/hyprspot-ctl hide-toggle
+# o Omarchy não liga a tecla Stop; as outras teclas de mídia ficam com ele (o hyprspot é um player MPRIS)
+bindld = , XF86AudioStop, Stop, exec, swayosd-client --playerctl stop || playerctl stop
 
 exec-once = $BIN/hyprspot
 layerrule = match:namespace ^hyprspot\$, blur on, ignore_alpha 0.2, no_anim on

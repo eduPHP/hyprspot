@@ -125,7 +125,7 @@ Por fim, abra **Settings** e cole o **Client ID** no campo. É o Client ID, não
 | Fechar o hyprspot | `q` com o mouse parado sobre o widget, ou no expandido fora da busca. A música continua tocando. |
 | Teclado no compacto | com o mouse parado sobre o widget: `Espaço` toca/pausa, `←` `→` trocam de faixa, `q` fecha |
 | Teclado no expandido | `Esc` volta da tela da playlist e, na lista, recolhe; `Tab` troca de aba (Playlists, Buscar, Ajustes), `/` vai para a busca, `Espaço` toca/pausa, `←` `→` trocam de faixa (fora da busca), `↑` `↓` e `Enter` nos resultados |
-| Teclas de mídia e de volume | continuam com o sistema; o hyprspot não mexe nelas. Use o widget (ou os atalhos acima) para controlar o Soloist |
+| Teclas de mídia | tocar/pausar, próxima, anterior e parar controlam o hyprspot quando é ele que está tocando. O hyprspot se registra como player MPRIS, então os atalhos do sistema (`playerctl`/`swayosd`) continuam como estão e o navegador e outros players seguem funcionando: as teclas vão para quem está tocando. Com o Soloist fora do ar ou outro aparelho tocando no Spotify, o hyprspot fica por último na fila. O hyprspot só liga a tecla Stop, que o Omarchy deixa sem atalho; as de volume continuam com o sistema. |
 
 Comandos de terminal: `hyprspot toggle | expand [--search] | settings | collapse | hide | show | quit | play-pause | next | prev | setup | login | soloist-status | soloist-update`.
 
@@ -190,7 +190,7 @@ O `soloist-update` baixa o build oficial, confere que ele roda, troca o `~/.loca
 | `INVALID_CLIENT: Invalid redirect URI` no login | No app do painel, adicione exatamente `http://127.0.0.1:8898/callback` em Redirect URIs e clique em Save. |
 | "A porta 8898 está ocupada" no login | Feche o outro programa que usa a porta e tente de novo. |
 | Playlists ou busca não carregam | Rode `hyprspot setup` e entre de novo no passo 3. Se a mensagem falar em cota, espere alguns minutos: apps em modo de desenvolvimento têm limite de chamadas. |
-| Teclas de mídia não controlam o hyprspot | É esperado: elas ficam com o sistema, e o Soloist não aparece para o `playerctl`. Use o widget ou os atalhos `Super+Alt`. |
+| Teclas de mídia não controlam o hyprspot | Veja se ele aparece em `playerctl -l` (precisa estar aberto) e se `playerctl -p hyprspot play-pause` funciona. Se funciona e a tecla não, o problema está no atalho: no Omarchy as teclas chamam `swayosd-client --playerctl …`, e se `swayosd-client --playerctl play-pause` disser que não achou `org.erikreider.swayosd-server`, reinicie o servidor com `pkill swayosd-server; hyprctl dispatch exec swayosd-server`. Com outro player tocando (navegador etc.), a tecla vai para ele. |
 
 Para desinstalar: `./setup.sh --remove`. Para apagar também o Soloist e as credenciais:
 

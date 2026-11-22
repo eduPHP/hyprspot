@@ -18,6 +18,7 @@ from hyprspot.cache import ArtCache, load_playlists, save_playlists  # noqa: E40
 from hyprspot.cli import ACTIONS, parse_args  # noqa: E402
 from hyprspot import onboarding as ob  # noqa: E402
 from hyprspot import waybar  # noqa: E402
+from hyprspot.mpris import MprisServer  # noqa: E402
 from hyprspot.config import (CACHE_DIR, CONFIG_PATH, DEFAULT_MARGIN, TOKEN_PATH, load_config,  # noqa: E402
                              save_margin, update_config)
 from hyprspot.focus import FocusWatcher, hypr_cursor, hypr_outputs  # noqa: E402
@@ -141,6 +142,43 @@ class SettingsBridge:
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+class MprisBridge:
+    """O que as teclas de mídia (via MPRIS) podem fazer no app (ver hyprspot.mpris.Controls)."""
+
+    def __init__(self, app: "HyprspotApp"):
+        self.app = app
+
+    def playback(self):
+        return self.app.state.playback
+
+    def play_pause(self) -> None:
+        self.app.run_action("play-pause")
+
+    def play(self) -> None:
+        self.app.on_command("play", {})
+
+    def pause(self) -> None:
+        self.app.on_command("pause", {})
+
+    def next(self) -> None:
+        self.app.run_action("next")
+
+    def prev(self) -> None:
+        self.app.run_action("prev")
+
+    def seek(self, position_ms: int) -> None:
+        self.app.on_command("seek", {"position_ms": position_ms})
+
+    def set_volume(self, volume: int) -> None:
+        self.app.on_command("set_volume", {"volume": volume})
+
+    def raise_(self) -> None:
+        self.app.run_action("expand")
+
+    def quit(self) -> None:
+        self.app.run_action("quit")
+
+
 class HyprspotApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
@@ -214,6 +252,11 @@ class HyprspotApp(Gtk.Application):
         self._collapsed_at = 0.0
         self.state.connect("changed", lambda _s, what: what in ("playback", "soloist", "ui", "liked") and self.update_bar())
         self.focus.connect("focus-lost", lambda *_: self._schedule_collapse())
+
+        # teclas de mídia: o playerctl/swayosd do sistema acha o hyprspot como player MPRIS
+        self.mpris = MprisServer(MprisBridge(self))
+        self.mpris.start(self.get_dbus_connection())
+        self.state.connect("changed", lambda _s, what: what in ("playback", "soloist") and self.mpris.changed())
 
         self.client.connect("event", self._on_event)
         self.client.connect("connection-changed", self._on_connection)
@@ -294,6 +337,7 @@ class HyprspotApp(Gtk.Application):
             self.on_command("skip_prev", {})
         elif name == "quit":
             waybar.write_status(None)
+            self.mpris.stop()
             self._cancel_collapse()
             self.focus.disarm()
             self.client.stop()

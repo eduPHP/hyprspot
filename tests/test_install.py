@@ -60,7 +60,10 @@ def test_install_writes_own_conf_and_sources_it(tmp_path):
     # no_anim: ao expandir/recolher o Hyprland animava a troca de tamanho esticando a imagem
     # antiga (a barra de progresso aparecia gigante por um instante)
     # as teclas de mídia e de volume ficam com o sistema: o hyprspot não desfaz nem refaz esses atalhos
-    assert "XF86Audio" not in conf and "unbind" not in conf
+    assert "unbind" not in conf
+    assert not any(k in conf for k in ("XF86AudioPlay", "XF86AudioPause", "XF86AudioNext", "XF86AudioPrev"))
+    # só a Stop, que o Omarchy deixa sem atalho
+    assert "bindld = , XF86AudioStop, Stop, exec, swayosd-client --playerctl stop || playerctl stop" in conf
     main = (hypr(tmp_path) / "hyprland.conf").read_text()
     assert main.startswith(HYPRLAND)
     assert f"source = {tmp_path}/.config/hypr/hyprspot.conf" in main
