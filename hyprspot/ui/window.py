@@ -141,11 +141,6 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         motion.connect("leave", lambda *_: self._hover_leave())
         motion.connect("motion", self._on_motion)
         self.add_controller(motion)
-        # depois de trocar de monitor no meio do arrasto (ver _drag_cancelled), o soltar do
-        # botão chega como um evento solto, sem gesto nenhum
-        legacy = Gtk.EventControllerLegacy()
-        legacy.connect("event", self._on_legacy_event)
-        self.add_controller(legacy)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._on_key)
         self.add_controller(keys)
@@ -315,7 +310,8 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             return
         if self._carry:
             # o gesto morreu porque a layer mudou de monitor, não porque o botão foi solto:
-            # o widget continua seguindo o cursor até o soltar chegar (_on_legacy_event/_on_motion)
+            # o widget continua seguindo o cursor até um movimento chegar sem botão apertado (_on_motion).
+            # (EventControllerLegacy não serve: no PyGObject o evento chega como None, e o processo caía.)
             self._carry = False
             if self._tick_id:  # o relógio de quadros da superfície antiga não é confiável aqui
                 self.remove_tick_callback(self._tick_id)
@@ -324,11 +320,6 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             self._carry_id = GLib.timeout_add(CARRY_TIMEOUT_MS, lambda: (self._finish_drag(), False)[1])
             return
         self._finish_drag(dx, dy)
-
-    def _on_legacy_event(self, _ctrl, event) -> bool:
-        if self._carry_id and event.get_event_type() == Gdk.EventType.BUTTON_RELEASE:
-            self._finish_drag()
-        return False
 
     def _finish_drag(self, dx: float = 0.0, dy: float = 0.0) -> None:
         if self._carry_id:
