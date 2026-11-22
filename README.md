@@ -146,6 +146,10 @@ collapse_delay_ms = 150     # espera antes de recolher ao perder o foco
 
 Os atalhos ficam em `~/.config/hypr/hyprspot.conf`. Esse arquivo é recriado sempre que você roda o instalador. Para trocar uma tecla, use `unbind` e `bind` num arquivo seu, carregado depois dele.
 
+### Tema
+
+As cores padrão são as do Tokyo Night. Se existir `~/.local/state/hypr-ui/theme.json` (gerado a partir do tema do Omarchy pelo `hypr-ui` do [hyprland-widgets](https://github.com/eduPHP/hyprland-widgets)), o hyprspot usa as cores dele e muda junto, sem reiniciar, quando você troca de tema, inclusive para temas claros.
+
 ## Renovação a cada 90 dias
 
 O Spotify faz cada build do Soloist expirar 90 dias depois de gerado. Faltando 14 dias, o modo expandido mostra um aviso. Para ver a validade e para atualizar:
