@@ -136,6 +136,12 @@ Para integrar a outros painéis (Waybar, eww etc.):
 
 ### Ajustes
 
+<p align="center">
+  <img src="docs/screenshots/expanded-settings.png" width="260" alt="Aba Ajustes: transparência, desfoque, onde fica, canto e monitor">
+  &nbsp;
+  <img src="docs/screenshots/waybar.png" width="440" alt="hyprspot na Waybar: anterior, o item com o progresso como fundo, próxima, e o player aberto embaixo">
+</p>
+
 A aba **Ajustes** do expandido (a engrenagem à esquerda das abas, ou `hyprspot settings`) muda na hora, e grava em `config.toml`:
 
 - **Transparência** do fundo, de 0 % (opaco) a 70 %. Só o fundo fica transparente; textos e botões continuam nítidos, e o desfoque do Hyprland continua atrás.

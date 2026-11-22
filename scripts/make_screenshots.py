@@ -17,6 +17,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# As imagens usam sempre as cores padrão (Tokyo Night), não o tema de quem roda o script.
+if not os.environ.get("HYPRSPOT_SHOTS_THEME"):
+    import tempfile
+    os.environ["XDG_STATE_HOME"] = tempfile.mkdtemp(prefix="hyprspot-shots-")
+    os.environ["HYPRSPOT_SHOTS_THEME"] = "default"
+
 # Como o app real, as janelas viram camadas (layer shell): o Hyprland não as encaixa no
 # mosaico e cada uma fica exatamente do tamanho do widget. A lib precisa vir no LD_PRELOAD.
 if "libgtk4-layer-shell" not in os.environ.get("LD_PRELOAD", ""):
@@ -42,6 +48,7 @@ from hyprspot.state import AppState, Playback  # noqa: E402
 from hyprspot.ui.common import load_css  # noqa: E402
 from hyprspot.ui.compact import CompactView  # noqa: E402
 from hyprspot.ui.expanded import ExpandedView  # noqa: E402
+from hyprspot.ui.settings import SettingsView  # noqa: E402
 
 SCALE = 2          # imagens em 2x para ficarem nítidas
 PAD = 28           # moldura ao redor do widget
@@ -116,7 +123,8 @@ class FakeArt:
         cb(self.cache[url])
 
 
-def render(widget: Gtk.Widget, w: int, h: int, radius: float, out: Path, frame: bool = True) -> None:
+def render(widget: Gtk.Widget, w: int, h: int, radius: float, out: Path, frame: bool = True,
+           shadow: bool = True) -> None:
     """Desenha o widget sobre o degradê (ou sozinho) e grava um PNG em 2x."""
     pad = PAD if frame else 0
     W, H = w + 2 * pad, h + 2 * pad
@@ -132,11 +140,20 @@ def render(widget: Gtk.Widget, w: int, h: int, radius: float, out: Path, frame: 
             stops.append(st)
         snap.append_linear_gradient(rect, Graphene.Point().init(0, 0), Graphene.Point().init(W, H), stops)
         rr = Gsk.RoundedRect().init_from_rect(Graphene.Rect().init(pad, pad, w, h), radius)
-        snap.append_outset_shadow(rr, Gdk.RGBA(red=0, green=0, blue=0, alpha=0.45), 0, 10, 0, 24)
+        if shadow:
+            snap.append_outset_shadow(rr, Gdk.RGBA(red=0, green=0, blue=0, alpha=0.45), 0, 10, 0, 24)
         snap.translate(Graphene.Point().init(pad, pad))
     Gtk.WidgetPaintable(widget=widget).snapshot(snap, w, h)
     node = snap.to_node()
-    tex = widget.get_native().get_renderer().render_texture(node, Graphene.Rect().init(0, 0, W * SCALE, H * SCALE))
+    viewport = Graphene.Rect().init(0, 0, W * SCALE, H * SCALE)
+    for _ in range(20):
+        # às vezes o renderizador ainda não está pronto e devolve tudo preto: espera e tenta de novo
+        tex = widget.get_native().get_renderer().render_texture(node, viewport)
+        if any(Gdk.TextureDownloader.new(tex).download_bytes()[0].get_data()[::4096]):
+            break
+        ctx, until = GLib.MainContext.default(), GLib.get_monotonic_time() + 250_000
+        while GLib.get_monotonic_time() < until:
+            ctx.iteration(False)
     tex.save_to_png(str(out))
     print(f"  {out}")
 
@@ -159,6 +176,85 @@ def host(child: Gtk.Widget, title: str) -> Gtk.Window:
     return win
 
 
+# Um pedaço da Waybar (Tokyo Night) para mostrar o modo "Na Waybar": anterior, o item com o
+# progresso como fundo, próxima e alguns ícones, com o player aberto embaixo do item.
+BAR_W, BAR_H, DROP_GAP = 640, 26, 6
+BAR_CSS = """
+.shot-bar { background-color: #1a1b26; color: #a9b1d6; font-family: 'JetBrainsMono Nerd Font'; font-size: 12px;
+  padding: 0 8px; }
+.shot-bar label { color: #a9b1d6; }
+.shot-bar .ws-on { color: #c0caf5; }
+.shot-bar .ws-off { color: #565f89; }
+.shot-bar .ctl { color: #8089b3; padding: 0 5px; }
+.shot-bar .icon { padding: 0 7px; }
+.shot-pill { padding: 0 7px; margin: 3px 2px; border-radius: 5px; color: #7aa2f7;
+  background-color: alpha(#7aa2f7, 0.18);
+  background-image: linear-gradient(alpha(#7aa2f7, 0.22), alpha(#7aa2f7, 0.22));
+  background-repeat: no-repeat; background-position: left center; background-size: 22% 100%; }
+.shot-pill label { color: #7aa2f7; }
+"""
+
+
+def waybar_shot(state: AppState, art, out: Path, done) -> None:
+    css = Gtk.CssProvider()
+    css.load_from_string(BAR_CSS)
+    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+    bar = Gtk.CenterBox()
+    bar.add_css_class("shot-bar")
+    bar.set_size_request(BAR_W, BAR_H)
+    left = Gtk.Box(spacing=10)
+    for i, n in enumerate("12345"):
+        lb = Gtk.Label(label=n)
+        lb.add_css_class("ws-on" if i == 1 else "ws-off")
+        left.append(lb)
+    bar.set_start_widget(left)
+    right = Gtk.Box()
+    prev = Gtk.Label(label="\U000f04ae")
+    prev.add_css_class("ctl")
+    pill = Gtk.Label(label=f"\U000f03e4  {NOW.title} · {NOW.artist}")
+    pill.add_css_class("shot-pill")
+    nxt = Gtk.Label(label="\U000f04ad")
+    nxt.add_css_class("ctl")
+    for w in (prev, pill, nxt):
+        right.append(w)
+    for g in ("\U000f00af", "\U000f0928", "\U000f036c", "\U000f057e", "\U000f035b"):  # bt, wifi, mic, som, cpu
+        lb = Gtk.Label(label=g)
+        lb.add_css_class("icon")
+        right.append(lb)
+    bar.set_end_widget(right)
+
+    drop = ExpandedView(state, lambda *_a: None, lambda *_a: None, lambda: None, lambda: None, art,
+                        settings=SettingsView(state, _fake_settings()))
+    drop.set_dropdown(True)
+    stage = Gtk.Fixed()
+    total_h = BAR_H + DROP_GAP + ExpandedView.HEIGHT
+    stage.set_size_request(BAR_W, total_h)
+    stage.put(bar, 0, 0)
+    win = host(stage, "hyprspot-shot-waybar")
+
+    def place():
+        ok, rect = pill.compute_bounds(stage)
+        cx = rect.get_x() + rect.get_width() / 2 if ok else BAR_W - 260
+        x = int(max(8, min(cx - ExpandedView.WIDTH / 2, BAR_W - ExpandedView.WIDTH - 8)))
+        stage.put(drop, x, BAR_H + DROP_GAP)
+        GLib.timeout_add(900, shoot)
+        return False
+
+    def shoot():
+        render(stage, BAR_W, total_h, 0, out / "waybar.png", shadow=False)
+        win.destroy()
+        done()
+        return False
+
+    GLib.timeout_add(1500, place)
+
+
+def _fake_settings():
+    sys.path.insert(0, str(ROOT / "tests"))
+    from test_settings import FakeActions  # ações falsas dos testes
+    return FakeActions()
+
+
 def widget_shots(out: Path, done) -> None:
     load_css()
     art = FakeArt()
@@ -170,8 +266,9 @@ def widget_shots(out: Path, done) -> None:
     state.set_playlists(PLAYLISTS)
     noop = lambda *_a, **_k: None  # noqa: E731
 
+    state.set_soloist_days(83)
     compact = CompactView(state, noop, noop, art)
-    expanded = ExpandedView(state, noop, noop, noop, noop, art)
+    expanded = ExpandedView(state, noop, noop, noop, noop, art, settings=SettingsView(state, _fake_settings()))
     wins = [host(compact, "hyprspot-shot-compact"), host(expanded, "hyprspot-shot-expanded")]
     state.set_ui(mode="expanded", tab="playlists")
 
@@ -193,9 +290,16 @@ def widget_shots(out: Path, done) -> None:
 
     def step3():
         render(expanded, ExpandedView.WIDTH, ExpandedView.HEIGHT, 16, out / "expanded-playlist-page.png")
+        expanded.show_tab("settings")
+        GLib.timeout_add(700, step4)
+        return False
+
+    def step4():
+        render(expanded, ExpandedView.WIDTH, ExpandedView.HEIGHT, 16, out / "expanded-settings.png")
         for w in wins:
             w.destroy()
-        done()
+        state.set_ui(tab="playlists")
+        waybar_shot(state, art, out, done)
         return False
 
     GLib.timeout_add(2500, step1)  # com menos tempo o compositor ainda não desenhou e a imagem sai vazia
