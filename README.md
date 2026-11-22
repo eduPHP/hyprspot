@@ -139,6 +139,7 @@ Para integrar a outros painéis (Waybar, eww etc.):
 A aba **Ajustes** do expandido (a engrenagem à esquerda das abas, ou `hyprspot settings`) muda na hora, e grava em `config.toml`:
 
 - **Transparência** do fundo, de 0 % (opaco) a 70 %. Só o fundo fica transparente; textos e botões continuam nítidos, e o desfoque do Hyprland continua atrás.
+- **Desfoque:** liga ou desliga o blur do Hyprland atrás do widget. O blur do Omarchy também escurece o fundo (`brightness` do blur no `looknfeel.conf`); desligado, a transparência mostra a área de trabalho nítida.
 - **Canto:** leva o widget para um dos quatro cantos. Depois disso, arrastar continua funcionando.
 - **Monitor:** prende o widget a um monitor, ou "Automático" para abrir no monitor em foco.
 - **Chave do Soloist:** cole uma chave nova e clique em "Salvar e reiniciar". Ela é gravada em `soloist.env` (permissão 600) e o `soloist.service` reinicia. "Gerar chave" abre o painel do Spotify.
@@ -152,6 +153,7 @@ margin = [16, 16]           # distância da borda (o arraste grava aqui)
 monitor = ""                # conector, ex. "HDMI-A-1"; vazio = o monitor focado ao abrir (o arraste grava aqui)
 collapse_delay_ms = 150     # espera antes de recolher ao perder o foco
 opacity = 0.94              # opacidade do fundo, de 0.3 a 1 (a aba Ajustes grava aqui)
+blur = true                 # desfoque do Hyprland atrás do widget
 ```
 
 Os atalhos ficam em `~/.config/hypr/hyprspot.conf`. Esse arquivo é recriado sempre que você roda o instalador. Para trocar uma tecla, use `unbind` e `bind` num arquivo seu, carregado depois dele.

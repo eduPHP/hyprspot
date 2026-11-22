@@ -45,6 +45,10 @@ class FakeActions:
     def set_opacity(self, v):
         self.calls.append(("opacity", v))
 
+    def set_blur(self, on):
+        self.cfg.blur = on
+        self.calls.append(("blur", on))
+
     def set_anchor(self, a):
         self.cfg.anchor = a
         self.calls.append(("anchor", a))
@@ -138,6 +142,9 @@ def test_settings_show_saved_values_and_pick_choices(expanded):
     assert s._monitor_btns["eDP-1"].has_css_class("on")
     s.opacity.set_value(40)
     assert acts.calls[-1] == ("preview", 0.6)  # gravar espera o controle parar (debounce)
+    assert s.blur.get_active()
+    s.blur.set_active(False)
+    assert acts.calls[-1] == ("blur", False)
 
 
 @needs_display

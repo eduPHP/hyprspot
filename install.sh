@@ -60,7 +60,8 @@ bindd = SUPER ALT, B, hyprspot: buscar, exec, $BIN/hyprspot-ctl expand-search
 bindd = SUPER ALT, H, hyprspot: esconder/mostrar, exec, $BIN/hyprspot-ctl hide-toggle
 
 exec-once = $BIN/hyprspot
-layerrule = match:namespace hyprspot, blur on, ignore_alpha 0.2, no_anim on
+layerrule = match:namespace ^hyprspot\$, blur on, ignore_alpha 0.2, no_anim on
+layerrule = match:namespace ^hyprspot-clear\$, no_anim on
 windowrule = match:class ^(dev\.hyprspot\.Setup)\$, float on
 windowrule = match:class ^(dev\.hyprspot\.Setup)\$, size 580 600
 EOF

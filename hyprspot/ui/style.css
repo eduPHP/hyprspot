@@ -141,3 +141,7 @@ entry.hs-key {
 entry.hs-key:focus-within { border-color: @hs_accent; }
 button.hs-gear { min-width: 36px; min-height: 36px; border-radius: 10px; color: @hs_sub; }
 button.hs-gear.selected { background-color: @hs_line; color: @hs_fg; }
+switch.hs-switch { background-image: none; background-color: @hs_line_strong; border: none; box-shadow: none; }
+switch.hs-switch:checked { background-color: @hs_accent; }
+switch.hs-switch slider { background-image: none; background-color: @hs_fg; border: none; box-shadow: none; }
+switch.hs-switch:checked slider { background-color: @hs_base; }

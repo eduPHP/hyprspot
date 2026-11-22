@@ -22,6 +22,7 @@ class SettingsActions(Protocol):
     def config(self) -> Config: ...
     def preview_opacity(self, value: float) -> None: ...  # muda na tela, sem gravar
     def set_opacity(self, value: float) -> None: ...
+    def set_blur(self, on: bool) -> None: ...
     def set_anchor(self, anchor: str) -> None: ...
     def set_monitor(self, name: str) -> None: ...
     def monitors(self) -> list[str]: ...
@@ -115,8 +116,18 @@ class SettingsView(Gtk.Box):
         self.opacity.add_css_class("hs-scale")
         self.opacity.update_property([Gtk.AccessibleProperty.LABEL], ["Transparência do fundo"])
         self.opacity.connect("value-changed", self._on_opacity)
+        blur_row = Gtk.Box(spacing=8)
+        blur_row.append(label("Desfoque", "hs-set-label"))
+        self.blur = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.blur.add_css_class("hs-switch")
+        self.blur.update_property([Gtk.AccessibleProperty.LABEL], ["Desfoque atrás do widget"])
+        self.blur.connect("notify::active", self._on_blur)
+        blur_row.append(self.blur)
         return [_section("Aparência"), row, self.opacity,
-                _caption("Só o fundo fica transparente; textos e botões continuam nítidos.")]
+                _caption("Só o fundo fica transparente; textos e botões continuam nítidos."),
+                blur_row,
+                _caption("Com o desfoque, o Hyprland também escurece o que fica atrás. "
+                         "Desligado, a área de trabalho aparece nítida.")]
 
     def _build_position(self) -> list[Gtk.Widget]:
         grid = Gtk.Grid(column_spacing=6, row_spacing=6, column_homogeneous=True)
@@ -181,6 +192,10 @@ class SettingsView(Gtk.Box):
 
         self._opacity_id = GLib.timeout_add(OPACITY_DEBOUNCE_MS, save)
 
+    def _on_blur(self, switch: Gtk.Switch, _p) -> None:
+        if not self._syncing:
+            self.a.set_blur(switch.get_active())
+
     def _pick_anchor(self, anchor: str) -> None:
         self.a.set_anchor(anchor)
         self.sync()
@@ -209,6 +224,7 @@ class SettingsView(Gtk.Box):
         self._syncing = True
         self.opacity.set_value(transparency_pct(c.opacity))
         self.opacity_value.set_label(f"{transparency_pct(c.opacity)} %")
+        self.blur.set_active(c.blur)
         self._syncing = False
         for anchor, b in self._anchor_btns.items():
             toggle_class(b, "on", anchor == c.anchor)

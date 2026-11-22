@@ -26,6 +26,7 @@ class Config:
     soloist_ws: str = "ws://127.0.0.1:9090"
     collapse_delay_ms: int = 150
     opacity: float = 0.94  # fundo do widget: 1 = opaco
+    blur: bool = True  # desfoque do Hyprland atrás do widget
 
 
 def _read(path: Path) -> dict:
@@ -55,6 +56,8 @@ def load_config(path: Path = CONFIG_PATH, token_path: Path = TOKEN_PATH) -> Conf
         c.soloist_ws = raw["soloist_ws"]
     if isinstance(raw.get("collapse_delay_ms"), int):
         c.collapse_delay_ms = raw["collapse_delay_ms"]
+    if isinstance(raw.get("blur"), bool):
+        c.blur = raw["blur"]
     o = raw.get("opacity")
     if isinstance(o, (int, float)) and not isinstance(o, bool):
         c.opacity = clamp_opacity(o)
@@ -68,6 +71,8 @@ def clamp_opacity(v: float) -> float:
 def _toml_value(v) -> str:
     if isinstance(v, str):
         return json.dumps(v, ensure_ascii=False)
+    if isinstance(v, bool):
+        return "true" if v else "false"
     if isinstance(v, float):
         return f"{v:g}"
     if isinstance(v, tuple):

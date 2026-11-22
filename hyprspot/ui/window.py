@@ -24,6 +24,8 @@ def _log(*args) -> None:
         print(f"[drag {time.monotonic():.3f}]", *args, file=sys.stderr, flush=True)
 
 
+# O blur vem de uma regra do Hyprland por namespace (install.sh); sem blur, outro namespace.
+NAMESPACE, NAMESPACE_CLEAR = "hyprspot", "hyprspot-clear"
 EDGES = {"top": LS.Edge.TOP, "bottom": LS.Edge.BOTTOM, "left": LS.Edge.LEFT, "right": LS.Edge.RIGHT}
 DRAG_THRESHOLD = 8  # px; abaixo disso o botão esquerdo continua sendo um clique
 FOLLOW_TICK_MS = 16
@@ -91,7 +93,7 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         self.set_decorated(False)
 
         LS.init_for_window(self)
-        LS.set_namespace(self, "hyprspot")
+        LS.set_namespace(self, NAMESPACE if config.blur else NAMESPACE_CLEAR)
         LS.set_layer(self, LS.Layer.OVERLAY)
         self._watch_capture()
         LS.set_exclusive_zone(self, 0)
@@ -249,6 +251,18 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         LS.set_anchor(self, self._horiz, True)
         self.margin = tuple(margin)
         self._reapply()
+
+    def set_blur(self, on: bool) -> None:
+        """Liga/desliga o desfoque do Hyprland. O namespace só vale num novo map: some e volta."""
+        ns = NAMESPACE if on else NAMESPACE_CLEAR
+        if LS.get_namespace(self) == ns:
+            return
+        shown = self.get_visible()
+        if shown:
+            self.set_visible(False)
+        LS.set_namespace(self, ns)
+        if shown:
+            self.set_visible(True)
 
     def move_to_output(self, name: str) -> bool:
         """Leva o widget ao monitor `name`, ainda dentro da área visível dele."""

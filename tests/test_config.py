@@ -65,3 +65,13 @@ def test_update_config_changes_only_the_given_fields(tmp_path):
     c = load_config(p)
     assert (c.opacity, c.anchor, c.margin, c.monitor, c.client_id) == (0.55, "top-left", (40, 20), "HDMI-A-1", "x")
     assert "opacity = 0.55\n" in p.read_text()
+
+
+def test_blur_roundtrip(tmp_path):
+    from hyprspot.config import update_config
+    p = tmp_path / "config.toml"
+    p.write_text('client_id = "x"\n')
+    assert load_config(p).blur is True
+    update_config(p, blur=False)
+    assert "blur = false\n" in p.read_text()
+    assert load_config(p).blur is False

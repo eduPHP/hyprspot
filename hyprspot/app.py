@@ -71,6 +71,14 @@ class SettingsBridge:
         self.preview_opacity(value)
         update_config(CONFIG_PATH, opacity=value)
 
+    def set_blur(self, on: bool) -> None:
+        self.app.config.blur = on
+        update_config(CONFIG_PATH, blur=on)
+        self.app.win.set_blur(on)
+        if self.app.state.ui_mode == "expanded":
+            # some e volta para trocar o namespace: perde o foco e recolheria; reabre na aba
+            GLib.idle_add(lambda: (self.app.run_action("expand-settings"), False)[1])
+
     def set_anchor(self, anchor: str) -> None:
         self.app.win.set_anchor(anchor, DEFAULT_MARGIN)
         self.app.config.anchor = anchor
