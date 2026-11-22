@@ -10,7 +10,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 from gi.repository import Gtk4LayerShell as LS  # noqa: E402
 
 from hyprspot.config import Config  # noqa: E402
@@ -93,6 +93,7 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         LS.init_for_window(self)
         LS.set_namespace(self, "hyprspot")
         LS.set_layer(self, LS.Layer.OVERLAY)
+        self._watch_capture()
         LS.set_exclusive_zone(self, 0)
         self._outputs = outputs
         self.output = ""  # monitor ao qual a layer está presa ("" = o compositor escolhe)
@@ -220,6 +221,21 @@ class HyprspotWindow(Gtk.ApplicationWindow):
         if self.mode == "compact" and self._on_compact_key is not None:
             return self._on_compact_key(keyval)
         return False
+
+    def _watch_capture(self) -> None:
+        """Flameshot's overlay is a fullscreen window: above TOP, below OVERLAY.
+        ~/.local/bin/flameshot-gui keeps $XDG_RUNTIME_DIR/hypr-ui-capture while it is
+        up (the grab is already taken), so step down to TOP and let it cover us."""
+        flag = Gio.File.new_for_path(GLib.get_user_runtime_dir() + "/hypr-ui-capture")
+
+        def apply(*_):
+            want = LS.Layer.TOP if flag.query_exists(None) else LS.Layer.OVERLAY
+            if LS.get_layer(self) != want:
+                LS.set_layer(self, want)
+
+        self._capture_monitor = flag.monitor_file(Gio.FileMonitorFlags.NONE, None)
+        self._capture_monitor.connect("changed", apply)
+        apply()
 
     def toggle_hidden(self) -> None:
         self.set_visible(not self.get_visible())
