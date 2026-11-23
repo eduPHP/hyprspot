@@ -118,7 +118,8 @@ Por fim, abra **Settings** e cole o **Client ID** no campo. É o Client ID, não
 |---|---|
 | Expandir / recolher | `Super+Alt+M`, ou clique na capa ou no título |
 | Abrir direto na busca | `Super+Alt+B` |
-| Abrir uma playlist | clique nela, na lista ou na busca: ela começa a tocar e abre a tela dela, com "Tocar", "Aleatório" e a fila "A seguir". Clique numa música da fila para tocar a playlist a partir dela. Se a playlist já estiver tocando, só abre a tela. |
+| Tocar uma playlist | clique nela, na lista ou na busca: ela começa a tocar, fica destacada e você continua na lista. |
+| Abrir uma playlist | clique na playlist que já está tocando: abre a tela dela, com "Tocar", "Aleatório" e a fila "A seguir". Clique numa música da fila para tocar a playlist a partir dela. |
 | Esconder / mostrar | `Super+Alt+H` |
 | Volume | rolar o mouse sobre o widget compacto |
 | Mover o widget | arrastar o compacto com o botão esquerdo (no touchpad, um dedo) ou qualquer modo com o botão do meio. Ele passa de um monitor para outro seguindo o cursor (o Hyprland não avisa quando você solta o botão depois de trocar de tela, então ali ele fica onde o cursor parar), não sai da área visível, e a posição (e o monitor) ficam salvos. |

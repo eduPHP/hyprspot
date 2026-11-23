@@ -171,7 +171,7 @@ class QueueSync:
 
 
 def playlist_click_commands(pb: Playback, uri: str) -> list[tuple[str, dict]]:
-    """Clicar numa playlist toca; se ela já é o que está tocando, só abre a tela."""
+    """Clicar numa playlist toca (e fica na lista); se ela já é o que está tocando, abre a tela dela."""
     return [] if pb.context_uri == uri else [("play", {"uri": uri})]
 
 

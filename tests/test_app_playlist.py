@@ -24,3 +24,42 @@ def test_skip_count():
     assert skip_count(q, "spotify:track:2") == 3       # 3 "próxima" chegam à 3ª da fila
     assert skip_count(q, "spotify:track:nada") is None
     assert skip_count(q, "spotify:track:11") is None   # além das 10 próximas
+
+
+class _FakeApp:
+    """Só o que HyprspotApp._open_playlist usa."""
+
+    def __init__(self, context_uri=None):
+        from types import SimpleNamespace
+        self.state = SimpleNamespace(playback=Playback(context_uri=context_uri))
+        self.sent, self.opened, self.synced = [], [], 0
+        self.expanded = SimpleNamespace(open_playlist=lambda p, tab, **kw: self.opened.append((p.uri, tab)))
+        self.queue_sync = SimpleNamespace(request=self._sync)
+
+    def _sync(self):
+        self.synced += 1
+
+    def on_command(self, name, fields):
+        self.sent.append((name, fields))
+
+
+def _open(app, tab="playlists"):
+    from hyprspot.app import HyprspotApp
+    from hyprspot.model import Playlist
+    HyprspotApp._open_playlist(app, Playlist(P, "P", "eu", None), tab)
+
+
+def test_clicking_another_playlist_plays_and_stays_on_the_list():
+    for tab in ("playlists", "search"):
+        app = _FakeApp(context_uri="spotify:playlist:x")
+        _open(app, tab)
+        assert app.sent == [("play", {"uri": P})]
+        assert app.opened == []          # continua na lista
+        assert app.synced == 1
+
+
+def test_clicking_the_playing_playlist_opens_its_page():
+    app = _FakeApp(context_uri=P)
+    _open(app)
+    assert app.sent == []
+    assert app.opened == [(P, "playlists")]
