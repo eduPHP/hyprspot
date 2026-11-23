@@ -17,7 +17,9 @@ REDIRECT_URI = "http://127.0.0.1:8898/callback"
 SCOPES = " ".join([
     "user-read-playback-state", "user-modify-playback-state", "user-read-currently-playing",
     "playlist-read-private", "playlist-read-collaborative", "user-library-read", "user-library-modify",
+    "user-read-recently-played",
 ])
+RECENT_SCOPE = "user-read-recently-played"
 AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 REFRESH_MARGIN_S = 60
@@ -78,6 +80,12 @@ class TokenStore:
             tok["expires_at"] = 0
             self.path.write_text(json.dumps(tok))
             os.chmod(self.path, 0o600)
+
+    def has_scope(self, scope: str) -> bool:
+        """O login atual deu essa permissão? (token antigo sem `scope` conta como sim)."""
+        tok = self.load() or {}
+        granted = tok.get("scope")
+        return granted is None or scope in granted.split()
 
     def access_token(self) -> str | None:
         tok = self.load()

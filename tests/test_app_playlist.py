@@ -72,7 +72,7 @@ def test_playing_from_search_adds_it_to_the_playlists_tab(tmp_path, monkeypatch)
     app = SimpleNamespace(state=state, _library=[], _played=[], on_command=lambda *a: None,
                           expanded=SimpleNamespace(open_playlist=lambda *a, **k: None),
                           queue_sync=SimpleNamespace(request=lambda: None))
-    for name in ("_set_library", "_remember_played"):
+    for name in ("_set_library", "_remember_played", "_save_played"):
         setattr(app, name, getattr(HyprspotApp, name).__get__(app))
     app._set_library(LIB)
     HyprspotApp._open_playlist(app, LIB[3], "playlists")   # da própria lista: nada muda
@@ -82,3 +82,43 @@ def test_playing_from_search_adds_it_to_the_playlists_tab(tmp_path, monkeypatch)
     assert load_playlists(tmp_path / "played.json") == [NEW]
     app._set_library(LIB)                                    # a Web API recarrega: continua lá
     assert NEW in state.playlists
+
+
+def test_sync_played_puts_spotify_recents_first_and_keeps_local_ones():
+    from hyprspot.state import sync_played
+    a, b, c = (Playlist(f"spotify:playlist:{x}", x, "", None) for x in "abc")
+    assert sync_played([c, a], [a, b]) == [a, b, c]
+    many = [Playlist(f"spotify:playlist:m{i}", "", "", None) for i in range(PLAYED_MAX)]
+    assert len(sync_played(many, [a])) == PLAYED_MAX
+
+
+def test_sync_recent_brings_playlists_played_elsewhere(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import hyprspot.app as appmod
+    from hyprspot.app import HyprspotApp
+    from hyprspot.state import AppState
+    monkeypatch.setattr(appmod, "PLAYED_PATH", tmp_path / "played.json")
+    phone = Playlist("spotify:playlist:celular", "Do celular", "x", None)
+    asked = []
+    api = SimpleNamespace(
+        store=SimpleNamespace(has_scope=lambda s: True),
+        recent_playlists=lambda cb: cb([phone.uri, LIB[2].uri, NEW.uri]),
+        playlist=lambda uri, cb: (asked.append(uri), cb(phone if uri == phone.uri else None)))
+    state = AppState()
+    app = SimpleNamespace(state=state, api=api, _library=[], _played=[NEW])
+    for name in ("_set_library", "_save_played", "_sync_recent"):
+        setattr(app, name, getattr(HyprspotApp, name).__get__(app))
+    app._set_library(LIB)
+    app._sync_recent()
+    assert asked == [phone.uri]                 # da biblioteca e já conhecidas: sem chamada
+    assert state.playlists == [LIKED, phone, NEW] + LIB[1:]
+
+
+def test_sync_recent_skips_without_permission():
+    from types import SimpleNamespace
+    from hyprspot.app import HyprspotApp
+    called = []
+    app = SimpleNamespace(api=SimpleNamespace(store=SimpleNamespace(has_scope=lambda s: False),
+                                              recent_playlists=lambda cb: called.append(1)))
+    HyprspotApp._sync_recent(app)
+    assert called == []

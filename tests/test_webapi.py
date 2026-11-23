@@ -100,3 +100,25 @@ def test_fill_missing_metadata():
     assert fill_track(named, {"spotify:track:x": full}) == named
     assert fill_track(bare, {}) == bare
     assert fill_track(None, {}) is None
+
+
+def test_parse_recent_playlists_keeps_order_and_only_playlists():
+    from hyprspot.webapi import parse_recent_playlists
+    body = {"items": [
+        {"context": {"type": "playlist", "uri": "spotify:playlist:a"}},
+        {"context": {"type": "album", "uri": "spotify:album:x"}},
+        {"context": None},
+        {"context": {"type": "playlist", "uri": "spotify:playlist:b"}},
+        {"context": {"type": "playlist", "uri": "spotify:playlist:a"}},
+        {"context": {"type": "collection", "uri": "spotify:user:u:collection"}},
+    ]}
+    assert parse_recent_playlists(body) == ["spotify:playlist:a", "spotify:playlist:b"]
+    assert parse_recent_playlists({}) == []
+
+
+def test_parse_playlist():
+    from hyprspot.webapi import parse_playlist
+    p = parse_playlist({"uri": "spotify:playlist:a", "name": "A", "owner": {"display_name": "x"},
+                        "images": [{"url": "http://i", "width": 300}]})
+    assert (p.uri, p.name, p.owner, p.image_url) == ("spotify:playlist:a", "A", "x", "http://i")
+    assert parse_playlist({}) is None

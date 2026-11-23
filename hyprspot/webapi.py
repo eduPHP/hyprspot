@@ -69,6 +69,21 @@ def parse_search_playlists(body: dict) -> list[Playlist]:
     return parse_playlists((body or {}).get("playlists") or {})[0]
 
 
+def parse_recent_playlists(body: dict) -> list[str]:
+    """URIs das playlists em "tocadas recentemente", da mais recente para a mais antiga, sem repetir."""
+    out: list[str] = []
+    for it in (body or {}).get("items") or []:
+        ctx = (it or {}).get("context") or {}
+        uri = ctx.get("uri") or ""
+        if ctx.get("type") == "playlist" and uri.startswith("spotify:playlist:") and uri not in out:
+            out.append(uri)
+    return out
+
+
+def parse_playlist(body: dict) -> Playlist | None:
+    return parse_playlists({"items": [body]})[0][0] if body and body.get("uri") else None
+
+
 def liked_playlist(user_id: str) -> Playlist:
     """'Músicas Curtidas' como contexto de verdade (o mesmo URI que os apps oficiais usam)."""
     return Playlist(f"spotify:user:{user_id}:collection", "Músicas Curtidas", "Sua biblioteca", None)
@@ -242,6 +257,16 @@ class WebApi:
     def track(self, uri: str, cb: Callable[[Track | None], None]) -> None:
         tid = uri.rsplit(":", 1)[-1]
         self._request("GET", f"/tracks/{tid}", lambda _s, d, e: cb(None if e else parse_track(d or {})))
+
+    def recent_playlists(self, cb: Callable[[list[str] | None], None]) -> None:
+        """Playlists tocadas em qualquer aparelho (o Spotify guarda só as últimas 50 músicas)."""
+        self._request("GET", "/me/player/recently-played?limit=50",
+                      lambda _s, d, e: cb(None if e else parse_recent_playlists(d or {})))
+
+    def playlist(self, uri: str, cb: Callable[[Playlist | None], None]) -> None:
+        pid = uri.rsplit(":", 1)[-1]
+        self._request("GET", f"/playlists/{pid}?fields=uri,name,owner(display_name),images",
+                      lambda _s, d, e: cb(None if e else parse_playlist(d or {})))
 
     def user_id(self, cb: Callable[[str | None], None]) -> None:
         self._request("GET", "/me", lambda _s, d, e: cb(None if e else (d or {}).get("id")))

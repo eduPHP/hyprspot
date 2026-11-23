@@ -65,3 +65,14 @@ def test_expire_forces_refresh(tmp_path):
     s.expire()
     assert s.needs_refresh(1001) is True
     assert s.load()["refresh_token"] == "r"
+
+
+def test_has_scope(tmp_path):
+    from hyprspot.auth import RECENT_SCOPE
+    store = TokenStore(tmp_path / "t.json")
+    store.save({"access_token": "a", "scope": "user-library-read playlist-read-private"})
+    assert not store.has_scope(RECENT_SCOPE)
+    store.save({"access_token": "a", "scope": f"user-library-read {RECENT_SCOPE}"})
+    assert store.has_scope(RECENT_SCOPE)
+    store.save({"access_token": "a"})          # token antigo sem o campo
+    assert store.has_scope(RECENT_SCOPE)

@@ -13,7 +13,7 @@ gi.require_version("Soup", "3.0")
 from gi.repository import Gio, GLib, Gtk, Soup  # noqa: E402
 
 from hyprspot import __version__, update  # noqa: E402
-from hyprspot.auth import TokenStore  # noqa: E402
+from hyprspot.auth import RECENT_SCOPE, TokenStore  # noqa: E402
 from hyprspot.cache import ArtCache, load_playlists, save_playlists  # noqa: E402
 from hyprspot.cli import ACTIONS, parse_args  # noqa: E402
 from hyprspot import onboarding as ob  # noqa: E402
@@ -26,7 +26,7 @@ from hyprspot.soloist import SoloistClient, repeat_commands  # noqa: E402
 from hyprspot.soloistctl import days_left, installed_version  # noqa: E402
 from hyprspot.state import (AppState, QueueSync, SkipDetector, Throttle, apply_event, clock_ms,  # noqa: E402
                             merge_playlists, optimistic, play_button_commands, playlist_click_commands,
-                            queue_is_truncated, remember_played,
+                            queue_is_truncated, remember_played, sync_played,
                             should_refresh_playlists, skip_count, skip_message)
 from hyprspot.ui.common import load_css  # noqa: E402
 from hyprspot.ui.compact import CompactView, compact_key_action, context_name  # noqa: E402
@@ -440,9 +440,7 @@ class HyprspotApp(Gtk.Application):
         self._library = list(items)
         self.state.set_playlists(merge_playlists(self._library, self._played))
 
-    def _remember_played(self, playlist) -> None:
-        """Tocou uma playlist pela busca: ela passa a aparecer na aba Playlists."""
-        played = remember_played(self._played, playlist)
+    def _save_played(self, played: list) -> None:
         if played == self._played:
             return
         self._played = played
@@ -451,6 +449,46 @@ class HyprspotApp(Gtk.Application):
         except OSError:
             pass
         self.state.set_playlists(merge_playlists(self._library, played))
+
+    def _sync_recent(self) -> None:
+        """Traz as playlists do "tocadas recentemente" do Spotify (celular, app, etc.) para a aba Playlists."""
+        if not self.api.store.has_scope(RECENT_SCOPE):  # login antigo: precisa de `hyprspot login`
+            return
+
+        def got(uris):
+            if not uris:
+                return
+            # as da biblioteca já aparecem; as que já conhecemos não precisam de outra chamada
+            mine = {p.uri for p in self._library}
+            uris = [u for u in uris if u not in mine]
+            known = {p.uri: p for p in self._played}
+            found = {u: known[u] for u in uris if u in known}
+            missing = [u for u in uris if u not in known]
+
+            def finish():
+                recent = [found[u] for u in uris if u in found]
+                self._save_played(sync_played(self._played, recent))
+
+            if not missing:
+                finish()
+                return
+            pending = [len(missing)]
+
+            def one(uri, pl):
+                if pl is not None:
+                    found[uri] = pl
+                pending[0] -= 1
+                if pending[0] == 0:
+                    finish()
+
+            for u in missing:
+                self.api.playlist(u, lambda pl, u=u: one(u, pl))
+
+        self.api.recent_playlists(got)
+
+    def _remember_played(self, playlist) -> None:
+        """Tocou uma playlist pela busca: ela passa a aparecer na aba Playlists."""
+        self._save_played(remember_played(self._played, playlist))
 
     def _open_playlist(self, playlist, tab: str) -> None:
         if tab == "search":
@@ -546,6 +584,7 @@ class HyprspotApp(Gtk.Application):
                 self._playlists_ok = time.monotonic()
                 self.state.set_playlists_error(None)
                 self._set_library(([liked] if liked else []) + items)
+                self._sync_recent()
 
             def with_count(n):
                 if not n:

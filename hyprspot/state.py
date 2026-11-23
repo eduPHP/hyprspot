@@ -209,6 +209,12 @@ def remember_played(played: list[Playlist], pl: Playlist) -> list[Playlist]:
     return ([pl] + [p for p in played if p.uri != pl.uri])[:PLAYED_MAX]
 
 
+def sync_played(played: list[Playlist], recent: list[Playlist]) -> list[Playlist]:
+    """Junta o "tocadas recentemente" do Spotify (vem primeiro, na ordem dele) com as guardadas aqui."""
+    uris = {p.uri for p in recent}
+    return (list(recent) + [p for p in played if p.uri not in uris])[:PLAYED_MAX]
+
+
 def merge_playlists(library: list[Playlist], played: list[Playlist]) -> list[Playlist]:
     """Aba Playlists: Curtidas, depois as tocadas pela busca que não são da biblioteca, depois a biblioteca."""
     have = {p.uri for p in library}
