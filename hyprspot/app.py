@@ -433,12 +433,10 @@ class HyprspotApp(Gtk.Application):
 
     # ------------------------------------------------------------------ tela da playlist
     def _open_playlist(self, playlist, tab: str) -> None:
-        """Clicar numa playlist que não está tocando toca e fica na lista; na que já toca, abre a tela."""
         cmds = playlist_click_commands(self.state.playback, playlist.uri)
         for name, fields in cmds:
             self.on_command(name, fields)
-        if not cmds:
-            self.expanded.open_playlist(playlist, tab)
+        self.expanded.open_playlist(playlist, tab, starting=bool(cmds))
         self.queue_sync.request()
 
     def _play_playlist(self, uri: str, shuffle: bool) -> None:
