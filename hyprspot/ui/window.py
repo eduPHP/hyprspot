@@ -235,6 +235,16 @@ class HyprspotWindow(Gtk.ApplicationWindow):
             return self._on_compact_key(keyval)
         return False
 
+    # -- ajustes --
+    def _set_edges(self, anchor: str) -> None:
+        vert, horiz = anchor.split("-")
+        for edge in (self._vert, self._horiz):
+            LS.set_anchor(self, edge, False)
+            LS.set_margin(self, edge, 0)
+        self._vert, self._horiz = EDGES[vert], EDGES[horiz]
+        LS.set_anchor(self, self._vert, True)
+        LS.set_anchor(self, self._horiz, True)
+
     def set_anchor(self, anchor: str, margin: tuple[int, int]) -> None:
         """Encaixa no canto `anchor` (ex. "top-left") com a margem dada."""
         self._float_anchor = anchor

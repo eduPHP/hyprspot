@@ -417,3 +417,22 @@ def test_saved_monitor_is_bound_at_startup(monkeypatch):
         assert bound == ["HDMI-A-1"]
     finally:
         w.destroy()
+
+
+def test_waybar_dropdown_opens_under_the_click(win):
+    # regressão: remover o Flameshot (ec95ae6) levou junto _set_edges e, no modo Waybar,
+    # abrir o player dava AttributeError: nada aparecia
+    w, ls = win
+    w.placement = "waybar"
+    w.fake_cursor["outs"] = [LEFT, RIGHT]
+    w.bar_point = (3000.0, 13.0)
+    w._place_dropdown((420, 560))
+    assert (w._vert, w._horiz) == ("top", "left")
+    assert ls.margins["left"] == 3000 - 2560 - 210 and ls.margins["top"] == 6
+
+
+def test_changing_the_corner_moves_the_anchor(win):
+    w, ls = win
+    w.set_anchor("top-left", (10, 20))
+    assert (w._vert, w._horiz) == ("top", "left")
+    assert ls.margins["left"] == 10 and ls.margins["top"] == 20
