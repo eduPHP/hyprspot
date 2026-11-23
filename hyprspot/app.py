@@ -19,13 +19,14 @@ from hyprspot.cli import ACTIONS, parse_args  # noqa: E402
 from hyprspot import onboarding as ob  # noqa: E402
 from hyprspot import waybar  # noqa: E402
 from hyprspot.mpris import MprisServer  # noqa: E402
-from hyprspot.config import (CACHE_DIR, CONFIG_PATH, DEFAULT_MARGIN, TOKEN_PATH, load_config,  # noqa: E402
+from hyprspot.config import (CACHE_DIR, CONFIG_PATH, DEFAULT_MARGIN, PLAYED_PATH, TOKEN_PATH, load_config,  # noqa: E402
                              save_margin, update_config)
 from hyprspot.focus import FocusWatcher, hypr_cursor, hypr_outputs  # noqa: E402
 from hyprspot.soloist import SoloistClient, repeat_commands  # noqa: E402
 from hyprspot.soloistctl import days_left, installed_version  # noqa: E402
 from hyprspot.state import (AppState, QueueSync, SkipDetector, Throttle, apply_event, clock_ms,  # noqa: E402
-                            optimistic, play_button_commands, playlist_click_commands, queue_is_truncated,
+                            merge_playlists, optimistic, play_button_commands, playlist_click_commands,
+                            queue_is_truncated, remember_played,
                             should_refresh_playlists, skip_count, skip_message)
 from hyprspot.ui.common import load_css  # noqa: E402
 from hyprspot.ui.compact import CompactView, compact_key_action, context_name  # noqa: E402
@@ -190,6 +191,8 @@ class HyprspotApp(Gtk.Application):
         self._search_seq = 0
         self._playlists_ok: float | None = None
         self._playlists_loading = False
+        self._library: list = []   # Curtidas + playlists da conta (Web API)
+        self._played: list = []    # tocadas pela busca (PLAYED_PATH)
         self._meta: dict = {}
         self._meta_pending: set[str] = set()
         self._hide_hint_shown = False
@@ -269,7 +272,8 @@ class HyprspotApp(Gtk.Application):
         self.update_bar()
         self.client.start()
 
-        self.state.set_playlists(load_playlists(CACHE_DIR / "playlists.json"))
+        self._played = load_playlists(PLAYED_PATH)
+        self._set_library(load_playlists(CACHE_DIR / "playlists.json"))
         self.refresh_playlists()
         self._check_soloist()
         GLib.timeout_add_seconds(SOLOIST_CHECK_S, lambda: (self._check_soloist(), True)[1])
@@ -432,7 +436,25 @@ class HyprspotApp(Gtk.Application):
         self.api.track(t.uri, got)
 
     # ------------------------------------------------------------------ tela da playlist
+    def _set_library(self, items: list) -> None:
+        self._library = list(items)
+        self.state.set_playlists(merge_playlists(self._library, self._played))
+
+    def _remember_played(self, playlist) -> None:
+        """Tocou uma playlist pela busca: ela passa a aparecer na aba Playlists."""
+        played = remember_played(self._played, playlist)
+        if played == self._played:
+            return
+        self._played = played
+        try:
+            save_playlists(PLAYED_PATH, played)
+        except OSError:
+            pass
+        self.state.set_playlists(merge_playlists(self._library, played))
+
     def _open_playlist(self, playlist, tab: str) -> None:
+        if tab == "search":
+            self._remember_played(playlist)
         cmds = playlist_click_commands(self.state.playback, playlist.uri)
         for name, fields in cmds:
             self.on_command(name, fields)
@@ -523,7 +545,7 @@ class HyprspotApp(Gtk.Application):
                 self._playlists_loading = False
                 self._playlists_ok = time.monotonic()
                 self.state.set_playlists_error(None)
-                self.state.set_playlists(([liked] if liked else []) + items)
+                self._set_library(([liked] if liked else []) + items)
 
             def with_count(n):
                 if not n:

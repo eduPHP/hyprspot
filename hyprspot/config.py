@@ -9,6 +9,8 @@ from pathlib import Path
 
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "hyprspot"
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "hyprspot"
+# playlists tocadas pela busca que aparecem na aba Playlists (estado do usuário, não cache)
+PLAYED_PATH = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "hyprspot/played.json"
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 TOKEN_PATH = CONFIG_DIR / "token.json"
 

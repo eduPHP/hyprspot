@@ -38,3 +38,11 @@ def test_get_touches_mtime(tmp_path):
 def test_path_for_is_stable(tmp_path):
     c = ArtCache(tmp_path)
     assert c.path_for("u") == c.path_for("u") != c.path_for("v")
+
+
+def test_played_playlists_roundtrip(tmp_path):
+    from hyprspot.model import Playlist
+    p = tmp_path / "state" / "played.json"
+    items = [Playlist("spotify:playlist:a", "A", "x", None)]
+    save_playlists(p, items)
+    assert load_playlists(p) == items

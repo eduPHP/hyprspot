@@ -24,3 +24,61 @@ def test_skip_count():
     assert skip_count(q, "spotify:track:2") == 3       # 3 "próxima" chegam à 3ª da fila
     assert skip_count(q, "spotify:track:nada") is None
     assert skip_count(q, "spotify:track:11") is None   # além das 10 próximas
+
+
+# --- playlists tocadas pela busca entram na aba Playlists ------------------------------------
+from hyprspot.model import Playlist  # noqa: E402
+from hyprspot.state import PLAYED_MAX, merge_playlists, remember_played  # noqa: E402
+
+LIKED = Playlist("spotify:user:u:collection", "Músicas Curtidas", "Sua biblioteca", None)
+LIB = [LIKED] + [Playlist(f"spotify:playlist:l{i}", f"L{i}", "eu", None) for i in range(4)]
+NEW = Playlist("spotify:playlist:novo", "Nova", "alguém", None)
+
+
+def test_played_playlist_shows_after_liked_songs():
+    assert merge_playlists(LIB, [NEW]) == [LIKED, NEW] + LIB[1:]
+
+
+def test_played_playlist_already_in_library_is_not_repeated():
+    assert merge_playlists(LIB, [LIB[2], NEW]) == [LIKED, NEW] + LIB[1:]
+
+
+def test_merge_without_liked_songs():
+    assert merge_playlists(LIB[1:], [NEW]) == [NEW] + LIB[1:]
+
+
+def test_remember_played_puts_latest_first_and_caps():
+    played = remember_played([], NEW)
+    other = Playlist("spotify:playlist:outra", "Outra", "x", None)
+    assert remember_played(played, other) == [other, NEW]
+    assert remember_played([other, NEW], NEW) == [NEW, other]
+    many = [Playlist(f"spotify:playlist:m{i}", "", "", None) for i in range(PLAYED_MAX)]
+    assert len(remember_played(many, NEW)) == PLAYED_MAX
+    assert remember_played(many, NEW)[0] == NEW
+
+
+def test_liked_songs_is_never_remembered():
+    assert remember_played([], LIKED) == []
+
+
+def test_playing_from_search_adds_it_to_the_playlists_tab(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import hyprspot.app as appmod
+    from hyprspot.app import HyprspotApp
+    from hyprspot.cache import load_playlists
+    from hyprspot.state import AppState
+    monkeypatch.setattr(appmod, "PLAYED_PATH", tmp_path / "played.json")
+    state = AppState()
+    app = SimpleNamespace(state=state, _library=[], _played=[], on_command=lambda *a: None,
+                          expanded=SimpleNamespace(open_playlist=lambda *a, **k: None),
+                          queue_sync=SimpleNamespace(request=lambda: None))
+    for name in ("_set_library", "_remember_played"):
+        setattr(app, name, getattr(HyprspotApp, name).__get__(app))
+    app._set_library(LIB)
+    HyprspotApp._open_playlist(app, LIB[3], "playlists")   # da própria lista: nada muda
+    assert state.playlists == LIB
+    HyprspotApp._open_playlist(app, NEW, "search")
+    assert state.playlists == [LIKED, NEW] + LIB[1:]
+    assert load_playlists(tmp_path / "played.json") == [NEW]
+    app._set_library(LIB)                                    # a Web API recarrega: continua lá
+    assert NEW in state.playlists

@@ -199,6 +199,24 @@ def skip_count(queue: list[Track], uri: str) -> int | None:
     return None
 
 
+PLAYED_MAX = 20  # playlists de fora da biblioteca lembradas na aba Playlists
+
+
+def remember_played(played: list[Playlist], pl: Playlist) -> list[Playlist]:
+    """Guarda a playlist tocada pela busca, a mais recente primeiro (Curtidas já está sempre lá)."""
+    if pl.uri.endswith(":collection"):
+        return list(played)
+    return ([pl] + [p for p in played if p.uri != pl.uri])[:PLAYED_MAX]
+
+
+def merge_playlists(library: list[Playlist], played: list[Playlist]) -> list[Playlist]:
+    """Aba Playlists: Curtidas, depois as tocadas pela busca que não são da biblioteca, depois a biblioteca."""
+    have = {p.uri for p in library}
+    extra = [p for p in played if p.uri not in have]
+    head = [p for p in library[:1] if p.uri.endswith(":collection")]
+    return head + extra + library[len(head):]
+
+
 PLAYLISTS_MAX_AGE_S = 600
 
 
