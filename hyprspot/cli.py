@@ -20,7 +20,7 @@ HELP = """uso: hyprspot [comando]
   settings          expande na aba Ajustes
   bar-toggle        abre/fecha o player embaixo do cursor (o clique no item da Waybar)
   volume-up | volume-down
-  waybar-status [prev|next]  o texto dos itens custom/hyprspot da Waybar (fica rodando)
+  waybar-status [prev|play|next]  o texto dos itens custom/hyprspot da Waybar (fica rodando)
   collapse          recolhe
   hide | show       esconde/mostra o widget
   quit              fecha o hyprspot (a música continua no Soloist)
@@ -40,7 +40,7 @@ def parse_args(argv: list[str]) -> tuple[str, dict]:
         return "version", {}
     if cmd == "expand" and rest in ([], ["--search"]):
         return "expand", {"search": rest == ["--search"]}
-    if cmd == "waybar-status" and rest in ([], ["main"], ["prev"], ["next"]):
+    if cmd == "waybar-status" and rest in ([], ["main"], ["prev"], ["play"], ["next"]):
         return cmd, {"kind": rest[0] if rest else "main"}
     if cmd in SIMPLE and not rest:
         return cmd, {}

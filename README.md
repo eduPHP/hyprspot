@@ -139,14 +139,14 @@ Para integrar a outros painéis (Waybar, eww etc.):
 <p align="center">
   <img src="docs/screenshots/expanded-settings.png" width="260" alt="Aba Ajustes: transparência, desfoque, onde fica, canto e monitor">
   &nbsp;
-  <img src="docs/screenshots/waybar.png" width="440" alt="hyprspot na Waybar: anterior, o item com o progresso como fundo, próxima, e o player aberto embaixo">
+  <img src="docs/screenshots/waybar.png" width="440" alt="hyprspot na Waybar: anterior, tocar/pausar e próxima, o item com o progresso como fundo, e o player aberto embaixo">
 </p>
 
 A aba **Ajustes** do expandido (a engrenagem à esquerda das abas, ou `hyprspot settings`) muda na hora, e grava em `config.toml`:
 
 - **Transparência** do fundo, de 0 % (opaco) a 70 %. Só o fundo fica transparente; textos e botões continuam nítidos, e o desfoque do Hyprland continua atrás.
 - **Desfoque:** liga ou desliga o blur do Hyprland atrás do widget. O blur do Omarchy também escurece o fundo (`brightness` do blur no `looknfeel.conf`); desligado, a transparência mostra a área de trabalho nítida.
-- **Onde fica:** "Flutuando" (o widget de sempre) ou "Na Waybar". Na Waybar o widget flutuante some e vira um item na barra com a faixa e o artista, entre os botões de faixa anterior e próxima e com o fundo enchendo conforme a música anda; clicar no item abre o player logo abaixo, o botão direito toca/pausa, o do meio pula de faixa e rolar muda o volume. Na primeira vez, o hyprspot põe `custom/hyprspot-prev`, `custom/hyprspot` e `custom/hyprspot-next` no início de `modules-right` do `~/.config/waybar/config.jsonc` e o estilo no `style.css`, com backup `.bak.hyprspot.<data>` de cada um. Flutuando, o item some da barra sozinho.
+- **Onde fica:** "Flutuando" (o widget de sempre) ou "Na Waybar". Na Waybar o widget flutuante some e vira os botões de faixa anterior, tocar/pausar e próxima, seguidos de um item com a faixa e o artista, com o fundo enchendo conforme a música anda; clicar no item abre o player logo abaixo, o botão direito toca/pausa, o do meio pula de faixa e rolar muda o volume. Na primeira vez, o hyprspot põe `custom/hyprspot-prev`, `custom/hyprspot-play`, `custom/hyprspot-next` e `custom/hyprspot` no início de `modules-right` do `~/.config/waybar/config.jsonc` e o estilo no `style.css`, com backup `.bak.hyprspot.<data>` de cada um (quem já tinha o item ganha o botão de tocar/pausar ao abrir o hyprspot na Waybar). Flutuando, o item some da barra sozinho.
 - **Canto:** leva o widget para um dos quatro cantos. Depois disso, arrastar continua funcionando.
 - **Monitor:** prende o widget a um monitor, ou "Automático" para abrir no monitor em foco.
 - **Chave do Soloist:** cole uma chave nova e clique em "Salvar e reiniciar". Ela é gravada em `soloist.env` (permissão 600) e o `soloist.service` reinicia. "Gerar chave" abre o painel do Spotify.

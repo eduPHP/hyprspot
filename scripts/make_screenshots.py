@@ -180,8 +180,8 @@ def host(child: Gtk.Widget, title: str) -> Gtk.Window:
     return win
 
 
-# Um pedaço da Waybar (Tokyo Night) para mostrar o modo "Na Waybar": anterior, o item com o
-# progresso como fundo, próxima e alguns ícones, com o player aberto embaixo do item.
+# Um pedaço da Waybar (Tokyo Night) para mostrar o modo "Na Waybar": anterior, tocar/pausar, próxima,
+# o item com o progresso como fundo e alguns ícones, com o player aberto embaixo do item.
 BAR_W, BAR_H, DROP_GAP = 640, 26, 6
 BAR_CSS = """
 .shot-bar { background-color: #1a1b26; color: #a9b1d6; font-family: 'JetBrainsMono Nerd Font'; font-size: 12px;
@@ -190,6 +190,7 @@ BAR_CSS = """
 .shot-bar .ws-on { color: #c0caf5; }
 .shot-bar .ws-off { color: #565f89; }
 .shot-bar .ctl { color: #8089b3; padding: 0 5px; }
+.shot-bar .ctl.play { color: #a9b1d6; }
 .shot-bar .icon { padding: 0 7px; }
 .shot-pill { padding: 0 7px; margin: 3px 2px; border-radius: 5px; color: #7aa2f7;
   background-color: alpha(#7aa2f7, 0.18);
@@ -215,11 +216,15 @@ def waybar_shot(state: AppState, art, out: Path, done) -> None:
     right = Gtk.Box()
     prev = Gtk.Label(label="\U000f04ae")
     prev.add_css_class("ctl")
-    pill = Gtk.Label(label=f"\U000f03e4  {NOW.title} · {NOW.artist}")
-    pill.add_css_class("shot-pill")
+    # o mesmo ícone do item custom/hyprspot-play: pausar tocando, tocar pausado (como o player embaixo)
+    play = Gtk.Label(label="\U000f03e4" if state.playback.status == "playing" else "\U000f040a")
+    play.add_css_class("ctl")
+    play.add_css_class("play")
     nxt = Gtk.Label(label="\U000f04ad")
     nxt.add_css_class("ctl")
-    for w in (prev, pill, nxt):
+    pill = Gtk.Label(label=f"{NOW.title} · {NOW.artist}")
+    pill.add_css_class("shot-pill")
+    for w in (prev, play, nxt, pill):
         right.append(w)
     for g in ("\U000f00af", "\U000f0928", "\U000f036c", "\U000f057e", "\U000f035b"):  # bt, wifi, mic, som, cpu
         lb = Gtk.Label(label=g)

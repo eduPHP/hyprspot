@@ -8,15 +8,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-
-from hyprspot.presenter import now_playing
-from hyprspot.state import Playback, clock_ms, position_now
+if TYPE_CHECKING:  # o `exec` dos itens (stream) não pode depender do GI/Soup: importa só json
+    from hyprspot.state import Playback
 
 RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "hyprspot"
 STATUS_PATH = RUNTIME / "waybar.json"
@@ -38,6 +39,8 @@ def _cut(s: str, n: int = MAX_CHARS) -> str:
 
 def progress(pb: Playback, now_ms: int | None = None) -> int | None:
     """Posição da faixa em % inteiros (a classe pN desenha a linha de progresso embaixo do item)."""
+    from hyprspot.state import clock_ms, position_now
+
     dur = pb.track.duration_ms if pb.track else 0
     if not dur:
         return None
@@ -47,6 +50,8 @@ def progress(pb: Playback, now_ms: int | None = None) -> int | None:
 def status(pb: Playback, open_: bool, context_name: str | None = None, soloist_days: int | None = None,
            now_ms: int | None = None) -> dict:
     """O JSON do item da barra para o estado atual."""
+    from hyprspot.presenter import now_playing
+
     v = now_playing(pb, context_name, soloist_days)
     tip = "\n".join(x for x in (v.title, v.detail or v.subtitle) if x)
     if v.offline:
@@ -54,8 +59,9 @@ def status(pb: Playback, open_: bool, context_name: str | None = None, soloist_d
     if pb.track is None:
         text, cls = f"{ICON_NOTE}  {v.title}", "idle"
     else:
-        line = " · ".join(x for x in (v.title, v.subtitle) if x)
-        text = f"{ICON_PAUSE if v.playing else ICON_PLAY}  {_esc(_cut(line))}"
+        # sem o ícone de tocar/pausar: ele é um item próprio (custom/hyprspot-play), porque clicar aqui
+        # abre o player
+        text = _esc(_cut(" · ".join(x for x in (v.title, v.subtitle) if x)))
         cls = "playing" if v.playing else "paused"
     classes = (["open"] if open_ else []) + [cls]
     pct = progress(pb, now_ms)
@@ -86,26 +92,42 @@ def write_status(data: dict | None, path: Path = STATUS_PATH) -> bool:
 
 
 def control(main: dict, kind: str) -> dict:
-    """Os botões ao lado do item: somem com ele (flutuando, app fechado ou Soloist desconectado)."""
+    """Os botões ao lado do item: somem com ele (flutuando, app fechado ou Soloist desconectado).
+    Tocar/pausar some também sem faixa (idle)."""
     cls = main.get("class")
     classes = cls if isinstance(cls, list) else [cls]
     if not main.get("text") or "hidden" in classes or "disconnected" in classes:
+        return dict(HIDDEN)
+    if kind == "play":
+        if "playing" in classes:
+            return {"text": ICON_PAUSE, "tooltip": "Pausar", "class": ["control", "playing"]}
+        if "paused" in classes:
+            return {"text": ICON_PLAY, "tooltip": "Tocar", "class": ["control", "paused"]}
         return dict(HIDDEN)
     if kind == "prev":
         return {"text": ICON_PREV, "tooltip": "Faixa anterior", "class": "control"}
     return {"text": ICON_NEXT, "tooltip": "Próxima faixa", "class": "control"}
 
 
+def _main(main: dict) -> dict:
+    """O item principal, sem o ícone de tocar/pausar que um app de versão anterior ainda grave no começo."""
+    text = main.get("text") or ""
+    for icon in (ICON_PAUSE, ICON_PLAY):
+        if text.startswith(icon + "  "):
+            return {**main, "text": text[len(icon) + 2:]}
+    return main
+
+
 def stream(path: Path = STATUS_PATH, out=sys.stdout, poll_s: float = 0.25, once: bool = False,
            kind: str = "main") -> None:
-    """O `exec` de cada item (main, prev, next): uma linha por mudança do arquivo de estado."""
+    """O `exec` de cada item (main, prev, play, next): uma linha por mudança do arquivo de estado."""
     last = None
     while True:
         try:
             main = json.loads(path.read_text() or "null") or dict(HIDDEN)
         except (OSError, ValueError):
             main = dict(HIDDEN)
-        line = json.dumps(main if kind == "main" else control(main, kind), ensure_ascii=False)
+        line = json.dumps(_main(main) if kind == "main" else control(main, kind), ensure_ascii=False)
         if line != last:
             out.write(line + "\n")
             out.flush()
@@ -116,8 +138,9 @@ def stream(path: Path = STATUS_PATH, out=sys.stdout, poll_s: float = 0.25, once:
 
 
 # ---------------------------------------------------------------------- config da Waybar
-PREV, NEXT = MODULE + "-prev", MODULE + "-next"
-MODULES = (PREV, MODULE, NEXT)
+PREV, PLAY, NEXT = MODULE + "-prev", MODULE + "-play", MODULE + "-next"
+MODULES = (PREV, PLAY, NEXT, MODULE)  # os botões juntos e o item (que abre o player) por último
+_OURS = re.compile(r'"custom/hyprspot(?:-(?:prev|play|next))?"\s*,?\s*')
 
 
 def module_block(bin_dir: Path, name: str = MODULE) -> str:
@@ -136,13 +159,14 @@ def module_block(bin_dir: Path, name: str = MODULE) -> str:
     "on-scroll-down": "{ctl} volume-down"
   }},
 '''
-    kind = "prev" if name == PREV else "next"
+    kind = {PREV: "prev", PLAY: "play", NEXT: "next"}[name]
+    action = "play-pause" if kind == "play" else kind
     return f'''  "{name}": {{
     "exec": "{ctl} waybar {kind}",
     "return-type": "json",
     "restart-interval": 5,
     "tooltip": true,
-    "on-click": "{ctl} media {kind}"
+    "on-click": "{ctl} media {action}"
   }},
 '''
 
@@ -158,6 +182,11 @@ CONTROL_STYLE = """
 /* custom/hyprspot-prev e -next: anterior / próxima ao lado do item */
 #custom-hyprspot-prev, #custom-hyprspot-next { padding: 0 5px; margin: 3px 0; border-radius: 5px; color: @muted; }
 #custom-hyprspot-prev:hover, #custom-hyprspot-next:hover { color: @foreground; background-color: alpha(@foreground, 0.08); }
+"""
+PLAY_STYLE = """
+/* custom/hyprspot-play: tocar / pausar, entre anterior e próxima */
+#custom-hyprspot-play { padding: 0 5px; margin: 3px 0; border-radius: 5px; color: @foreground; }
+#custom-hyprspot-play:hover { background-color: alpha(@foreground, 0.08); }
 """
 
 
@@ -176,8 +205,9 @@ def _quoted(name: str) -> str:
 
 
 def add_module(config_text: str, bin_dir: Path) -> str | None:
-    """Põe anterior, item e próxima no início de modules-right (ou troca o item antigo pelos três) e as
-    definições antes do fim. None: já está tudo, ou não deu."""
+    """Põe anterior, tocar/pausar, próxima e o item no início de modules-right (ou, se já houver algum
+    deles, no lugar do primeiro, na ordem certa) e as definições que faltam antes do fim.
+    None: já está tudo, ou não deu."""
     text = config_text
     i = text.find('"modules-right"')
     j = text.find("[", i) if i >= 0 else -1
@@ -185,15 +215,21 @@ def add_module(config_text: str, bin_dir: Path) -> str | None:
     if k < 0:
         return None
     listed = text[j + 1:k]
-    trio = ", ".join(_quoted(m) for m in MODULES)
-    if all(_quoted(m) in listed for m in MODULES):
-        pass
-    elif _quoted(MODULE) in listed and not any(_quoted(m) in listed for m in (PREV, NEXT)):
-        text = text[: j + 1] + listed.replace(_quoted(MODULE), trio, 1) + text[k:]
+    group = ", ".join(_quoted(m) for m in MODULES)
+    found = _OURS.search(listed)
+    if found:
+        at = found.start()
+        rest = _OURS.sub("", listed)
+        after = rest[at:]
+        if after.strip():
+            new_listed = rest[:at] + group + ", " + after
+        else:
+            new_listed = re.sub(r",\s*$", "", rest[:at].rstrip()) + (", " if rest[:at].strip() else "") + group
     else:
         first = listed.lstrip()
-        sep = ", " if first else ""
-        text = text[: j + 1] + trio + sep + listed.lstrip(" ") + text[k:]
+        new_listed = group + (", " if first else "") + listed.lstrip(" ")
+    if new_listed != listed:
+        text = text[: j + 1] + new_listed + text[k:]
     missing = [m for m in MODULES if f"{_quoted(m)}:" not in text and f"{_quoted(m)} :" not in text]
     if text == config_text and not missing:
         return None
@@ -224,6 +260,7 @@ def install(bin_dir: Path, waybar_dir: Path = WAYBAR_DIR) -> str:
         old = css.read_text()
         extra = ("" if "#custom-hyprspot {" in old else STYLE_BLOCK) + \
                 ("" if "#custom-hyprspot-prev" in old else CONTROL_STYLE) + \
+                ("" if "#custom-hyprspot-play" in old else PLAY_STYLE) + \
                 ("" if "#custom-hyprspot.p50 " in old else PROGRESS_STYLE)
         if extra:
             shutil.copy2(css, css.with_name(f"style.css.bak.hyprspot.{stamp}"))

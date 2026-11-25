@@ -38,4 +38,5 @@ def test_waybar_status_kinds():
     from hyprspot.cli import parse_args
     assert parse_args(["waybar-status"]) == ("waybar-status", {"kind": "main"})
     assert parse_args(["waybar-status", "prev"]) == ("waybar-status", {"kind": "prev"})
+    assert parse_args(["waybar-status", "play"]) == ("waybar-status", {"kind": "play"})
     assert parse_args(["waybar-status", "x"])[0] == "help"

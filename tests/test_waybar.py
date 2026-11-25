@@ -18,8 +18,9 @@ def _pb(**kw):
 
 def test_status_playing_paused_open_and_offline():
     s = waybar.status(_pb(), False)
-    assert s["class"][0] == "playing" and s["text"].startswith(waybar.ICON_PAUSE)
-    assert "Californication · Red Hot Chili Peppers" in s["text"]
+    assert s["class"][0] == "playing" and s["text"] == "Californication · Red Hot Chili Peppers"
+    # o ícone de tocar/pausar não fica no item que abre o player (o clique nele abria o player)
+    assert waybar.ICON_PAUSE not in s["text"] and waybar.ICON_PLAY not in s["text"]
     assert waybar.status(_pb(status="paused"), False)["class"] == ["paused", "p0"]
     assert waybar.status(_pb(), True)["class"][:2] == ["open", "playing"]
     off = waybar.status(Playback(), False)
@@ -61,10 +62,13 @@ def _jsonc(text):
 def test_add_module_puts_it_first_on_the_right_and_stays_valid():
     new = waybar.add_module(CONFIG, Path("/b"))
     data = _jsonc(new)
-    assert data["modules-right"] == ["custom/hyprspot-prev", "custom/hyprspot", "custom/hyprspot-next", "bluetooth", "cpu"]
+    assert data["modules-right"] == ["custom/hyprspot-prev", "custom/hyprspot-play", "custom/hyprspot-next",
+                                     "custom/hyprspot", "bluetooth", "cpu"]
     assert data["custom/hyprspot"]["on-click"] == "/b/hyprspot-ctl bar-toggle"
     assert data["custom/hyprspot-prev"]["on-click"] == "/b/hyprspot-ctl media prev"
     assert data["custom/hyprspot-next"]["exec"] == "/b/hyprspot-ctl waybar next"
+    assert data["custom/hyprspot-play"]["exec"] == "/b/hyprspot-ctl waybar play"
+    assert data["custom/hyprspot-play"]["on-click"] == "/b/hyprspot-ctl media play-pause"
     assert waybar.add_module(new, Path("/b")) is None  # idempotente
 
 
@@ -73,7 +77,8 @@ def test_install_backs_up_and_is_idempotent(tmp_path):
     (tmp_path / "style.css").write_text("* { font-size: 12px; }\n")
     assert waybar.install(Path("/b"), tmp_path) == "config, estilo"
     assert len(list(tmp_path.glob("config.jsonc.bak.hyprspot.*"))) == 1
-    assert "#custom-hyprspot" in (tmp_path / "style.css").read_text()
+    css = (tmp_path / "style.css").read_text()
+    assert "#custom-hyprspot {" in css and "#custom-hyprspot-play {" in css
     assert waybar.install(Path("/b"), tmp_path) == "já instalado"
 
 
@@ -84,11 +89,40 @@ OLD_INSTALL = """{
 """
 
 
-def test_upgrade_wraps_the_old_item_with_prev_and_next():
+def test_upgrade_wraps_the_old_item_with_the_controls():
     data = _jsonc(waybar.add_module(OLD_INSTALL, Path("/b")))
-    assert data["modules-right"] == ["custom/hyprspot-prev", "custom/hyprspot", "custom/hyprspot-next", "bluetooth"]
+    assert data["modules-right"] == ["custom/hyprspot-prev", "custom/hyprspot-play", "custom/hyprspot-next",
+                                     "custom/hyprspot", "bluetooth"]
     assert data["custom/hyprspot"] == {"exec": "x"}  # a definição antiga fica como está
     assert "custom/hyprspot-next" in data
+
+
+TRIO_INSTALL = """{
+  "modules-left": ["clock"],
+  "modules-right": ["custom/hyprspot-prev", "custom/hyprspot", "custom/hyprspot-next", "bluetooth", "cpu"],
+  "custom/hyprspot": { "exec": "x" },
+  "custom/hyprspot-prev": { "exec": "p" },
+  "custom/hyprspot-next": { "exec": "n" }
+}
+"""
+
+
+def test_upgrade_from_prev_item_next_adds_play_and_regroups():
+    new = waybar.add_module(TRIO_INSTALL, Path("/b"))
+    data = _jsonc(new)
+    assert data["modules-right"] == ["custom/hyprspot-prev", "custom/hyprspot-play", "custom/hyprspot-next",
+                                     "custom/hyprspot", "bluetooth", "cpu"]
+    assert data["custom/hyprspot-play"]["on-click"] == "/b/hyprspot-ctl media play-pause"
+    assert data["custom/hyprspot-prev"] == {"exec": "p"}
+    assert waybar.add_module(new, Path("/b")) is None
+
+
+def test_group_keeps_its_place_in_the_middle_or_at_the_end():
+    mid = '{ "modules-right": ["a", "custom/hyprspot", "b"] }'
+    end = '{ "modules-right": ["a",\n    "custom/hyprspot-prev", "custom/hyprspot"] }'
+    group = ["custom/hyprspot-prev", "custom/hyprspot-play", "custom/hyprspot-next", "custom/hyprspot"]
+    assert _jsonc(waybar.add_module(mid, Path("/b")))["modules-right"] == ["a", *group, "b"]
+    assert _jsonc(waybar.add_module(end, Path("/b")))["modules-right"] == ["a", *group]
 
 
 def test_controls_follow_the_main_item():
@@ -99,9 +133,32 @@ def test_controls_follow_the_main_item():
     assert waybar.control({"text": waybar.ICON_NOTE, "class": "disconnected"}, "prev")["text"] == ""
 
 
+def test_play_button_shows_pause_while_playing_and_hides_without_a_track():
+    assert waybar.control({"text": "x", "class": ["playing", "p3"]}, "play")["text"] == waybar.ICON_PAUSE
+    assert waybar.control({"text": "x", "class": ["open", "paused", "p3"]}, "play")["text"] == waybar.ICON_PLAY
+    assert waybar.control({"text": "x", "class": "idle"}, "play")["text"] == ""
+    assert waybar.control(dict(waybar.HIDDEN), "play")["text"] == ""
+
+
+def test_stream_play_kind(tmp_path):
+    p = tmp_path / "waybar.json"
+    waybar.write_status(waybar.status(_pb(status="paused"), False), p)
+    out = io.StringIO()
+    waybar.stream(p, out, once=True, kind="play")
+    assert json.loads(out.getvalue())["text"] == waybar.ICON_PLAY
+
+
 def test_progress_class_follows_the_position():
     pb = _pb(status="playing", position_ms=164500, position_ts_ms=1000, speed=1.0)
     assert waybar.status(pb, False, now_ms=1000)["class"] == ["playing", "p50"]
     assert waybar.status(pb, False, now_ms=1000 + 33000)["class"] == ["playing", "p60"]
     assert waybar.progress(_pb(track=None)) is None
     assert "#custom-hyprspot.p100 { background-size: 100% 100%; }" in waybar.PROGRESS_STYLE
+
+
+def test_stream_drops_the_icon_an_older_app_still_writes(tmp_path):
+    p = tmp_path / "waybar.json"
+    waybar.write_status({"text": waybar.ICON_PAUSE + "  A · B", "class": ["playing", "p1"]}, p)
+    out = io.StringIO()
+    waybar.stream(p, out, once=True)
+    assert json.loads(out.getvalue())["text"] == "A · B"
